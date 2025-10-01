@@ -1,0 +1,16 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@sail/xlsx-handlebars@0.1.1": "0.1.1"
+  },
+  "jsr": {
+    "@sail/xlsx-handlebars@0.1.1": {
+      "integrity": "7024f4311d67a90c60acc65f4b3ee9eb6648be1d90d0d4d2bf6b552321ab6df4"
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@sail/xlsx-handlebars@0.1.1"
+    ]
+  }
+}

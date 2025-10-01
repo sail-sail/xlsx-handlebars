@@ -1,0 +1,33 @@
+{
+  "name": "xlsx-handlebars",
+  "collaborators": [
+    "sail-sail <151263555@qq.com>"
+  ],
+  "description": "A Rust library for processing XLSX files with Handlebars templates, supporting WASM, Node.js, Deno, and browsers",
+  "version": "0.1.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sail-sail/xlsx-handlebars"
+  },
+  "files": [
+    "xlsx_handlebars_bg.wasm",
+    "xlsx_handlebars.js",
+    "xlsx_handlebars.d.ts",
+    "LICENSE-MIT"
+  ],
+  "homepage": "https://github.com/sail-sail/xlsx-handlebars",
+  "types": "xlsx_handlebars.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "keywords": [
+    "xlsx",
+    "handlebars",
+    "template",
+    "wasm",
+    "office"
+  ],
+  "main": "xlsx_handlebars.js",
+  "module": "xlsx_handlebars.js"
+}

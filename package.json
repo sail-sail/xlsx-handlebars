@@ -1,0 +1,49 @@
+{
+  "name": "xlsx-handlebars",
+  "version": "0.1.1",
+  "description": "A Rust library for processing XLSX files with Handlebars templates, supporting WASM, Node.js, Deno, and browsers",
+  "main": "pkg-npm/xlsx_handlebars.js",
+  "types": "pkg-npm/xlsx_handlebars.d.ts",
+  "files": [
+    "pkg-npm"
+  ],
+  "scripts": {
+    "build": "node tools/build.js",
+    "build:npm": "wasm-pack build --target web --out-dir pkg-npm",
+    "build:jsr": "wasm-pack build --target web --out-dir pkg-jsr",
+    "publish": "npm run publish:rust && npm run publish:npm && npm run publish:jsr",
+    "publish:rust": "cargo publish --allow-dirty",
+    "publish:npm": "cd pkg-npm && npm publish",
+    "publish:jsr": "cd pkg-jsr && deno publish --allow-slow-types --allow-dirty",
+    "test": "wasm-pack test --headless --firefox",
+    "test:node": "wasm-pack test --node",
+    "dev": "wasm-pack build --dev --target web --out-dir pkg-npm",
+    "clean": "rimraf pkg-npm pkg-jsr target",
+    "version": "node tools/update_version.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sail-sail/xlsx-handlebars.git"
+  },
+  "keywords": [
+    "xlsx",
+    "handlebars",
+    "template",
+    "wasm",
+    "office",
+    "rust",
+    "webassembly"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/sail-sail/xlsx-handlebars/issues"
+  },
+  "homepage": "https://github.com/sail-sail/xlsx-handlebars#readme",
+  "devDependencies": {
+    "rimraf": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
