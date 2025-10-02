@@ -87,12 +87,6 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
     let mut brace_count = 0;        // 当前大括号的数量
     let mut in_handlebars = false;  // 是否在完整的 handlebars 表达式中 (如 {{...}})
     
-    // 是否在 row 标签内
-    let mut _is_in_row = false;
-    
-    // 是否在 c 标签内
-    let mut _is_in_c = false;
-    
     // 当前行号(用于跟踪 each 块的行范围)
     let mut current_row: u32 = 0;
     
@@ -104,6 +98,16 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
             // 处理文本节点
             Ok(Event::Text(ref e)) => {
                 let text = std::str::from_utf8(e)?;
+                
+                // 先将 XML 转义符转换回正常字符
+                // 这样 Handlebars 才能正确解析语法，例如：
+                // {{formula &quot;=SUM(A1:B1)&quot;}} -> {{formula "=SUM(A1:B1)"}}
+                let text = text
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace("&amp;", "&")
+                    .replace("&quot;", "\"")
+                    .replace("&apos;", "'");
                 
                 // 逐字符分析文本，统计大括号
                 for ch in text.chars() {
@@ -125,7 +129,7 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
                 }
                 
                 // 将当前文本添加到缓冲区
-                text_buffer.push_str(text);
+                text_buffer.push_str(&text);
                 
                 // 如果不在 handlebars 表达式中且大括号已平衡，输出缓冲的文本
                 // 否则继续累积文本，等待 handlebars 表达式完整
@@ -200,7 +204,8 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
                             }
                         }
                     }
-                    writer.write_event(Event::Text(quick_xml::events::BytesText::new(&text_buffer)))?;
+                    // 使用 from_escaped 避免 Writer 重复转义 (例如 " 变成 &quot;)
+                    writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(&text_buffer)))?;
                     text_buffer.clear();
                 }
             }
@@ -211,13 +216,12 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
                 if !in_handlebars && brace_count == 0 {
                     // 先输出之前缓冲的文本
                     if !text_buffer.is_empty() {
-                      writer.write_event(Event::Text(quick_xml::events::BytesText::new(&text_buffer)))?;
+                      // 使用 from_escaped 避免 Writer 重复转义
+                      writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(&text_buffer)))?;
                       text_buffer.clear();
                     }
                     let tag_name = e.name().as_ref().to_vec();
                     if tag_name == b"row" {
-                      _is_in_row = true;
-                      
                       // 从 row 标签的 r 属性中提取行号
                       for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
@@ -254,8 +258,6 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
                       // 输出修改后的开始标签
                       writer.write_event(Event::Start(new_start))?;
                     } else if tag_name == b"c" {
-                      _is_in_c = true;
-                      
                       // 从 c 标签的 r 属性中提取列号
                       for attr in e.attributes().flatten() {
                         let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
@@ -310,15 +312,11 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
                 if !in_handlebars && brace_count == 0 {
                     // 先输出之前缓冲的文本
                     if !text_buffer.is_empty() {
-                        writer.write_event(Event::Text(quick_xml::events::BytesText::new(&text_buffer)))?;
+                        // 使用 from_escaped 避免 Writer 重复转义
+                        writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(&text_buffer)))?;
                         text_buffer.clear();
                     }
-                    let tag_name = e.name().as_ref().to_vec();
-                    if tag_name == b"row" {
-                      _is_in_row = false;
-                    } else if tag_name == b"c" {
-                      _is_in_c = false;
-                    }
+                    // let tag_name = e.name().as_ref().to_vec();
                     // 输出结束标签
                     writer.write_event(Event::End(e.clone()))?;
                 }
@@ -328,7 +326,8 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
             Ok(Event::Empty(ref e)) => {
                 if !in_handlebars && brace_count == 0 {
                     if !text_buffer.is_empty() {
-                        writer.write_event(Event::Text(quick_xml::events::BytesText::new(&text_buffer)))?;
+                        // 使用 from_escaped 避免 Writer 重复转义
+                        writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(&text_buffer)))?;
                         text_buffer.clear();
                     }
                     writer.write_event(Event::Empty(e.clone()))?;
@@ -340,7 +339,8 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
             Ok(event) => {
                 if !in_handlebars && brace_count == 0 {
                     if !text_buffer.is_empty() {
-                        writer.write_event(Event::Text(quick_xml::events::BytesText::new(&text_buffer)))?;
+                        // 使用 from_escaped 避免 Writer 重复转义
+                        writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(&text_buffer)))?;
                         text_buffer.clear();
                     }
                     writer.write_event(event)?;
@@ -355,7 +355,8 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
     
     // 输出剩余的文本缓冲（如果有的话）
     if !text_buffer.is_empty() {
-        writer.write_event(Event::Text(quick_xml::events::BytesText::new(&text_buffer)))?;
+        // 使用 from_escaped 避免 Writer 重复转义
+        writer.write_event(Event::Text(quick_xml::events::BytesText::from_escaped(&text_buffer)))?;
     }
     
     // 将结果转换为字符串返回
@@ -564,56 +565,6 @@ pub(crate) fn replace_shared_strings_in_sheet(
   Ok(String::from_utf8(result)?)
 }
 
-/**
-<is>
-  <r>
-    <t>a</t>
-  </r>
-  <r>
-    <rPr>
-      <sz val="11" />
-      <color rgb="FFFF0000" />
-      <rFont val="等线" />
-      <family val="3" />
-      <charset val="134" />
-      <scheme val="minor" />
-    </rPr>
-    <t>b</t>
-  </r>
-  <r>
-    <rPr>
-      <sz val="11" />
-      <color theme="1" />
-      <rFont val="等线" />
-      <family val="2" />
-      <scheme val="minor" />
-    </rPr>
-    <t>{{#each projects}}</t>
-  </r>
-  <phoneticPr fontId="1" type="noConversion" />
-</is>
-*/
-/// 这样的标签转换成
-/*
-<is>
-  <r>
-    <t>a</t>
-  </r>
-  <r>
-    <rPr>
-      <sz val="11" />
-      <color rgb="FFFF0000" />
-      <rFont val="等线" />
-      <family val="3" />
-      <charset val="134" />
-      <scheme val="minor" />
-    </rPr>
-    <t>b</t>
-  </r>
-  {{#each projects}}
-  <phoneticPr fontId="1" type="noConversion" />
-</is>
-*/
 pub(crate) fn replace_shared_string_si_with_handlebars(
   si_xml: &str
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -953,18 +904,12 @@ mod tests {
 /// # 参数
 /// * `xml_content` - sheet.xml 的 XML 内容
 /// * `target_uuid` - 要查找和删除的 UUID 标记
-/// 
-/// # 示例
-/// ```handlebars
-/// {{#each projects}}
-///   <row>{{name}}</row>
-/// {{else}}
-///   <row>{{removeRow}}</row>  <!-- 这一行会被删除 -->
-/// {{/each}}
 /// ```
-pub(crate) fn remove_row_simple(
+pub(crate) fn post_process_xml(
     xml_content: &str, 
-    target_uuid: &str
+    remove_row_key: Option<&str>,
+    to_number_key: Option<&str>,
+    to_formula_key: Option<&str>
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut reader = Reader::from_str(xml_content);
     let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -1008,12 +953,30 @@ pub(crate) fn remove_row_simple(
                     if row_depth == 0 {
                         current_row_content.push_str(&format!("</{}>", String::from_utf8_lossy(e.name().as_ref())));
                         
-                        // 检查当前行是否包含目标 UUID
-                        if !current_row_content.contains(target_uuid) {
-                            // 如果不包含目标 UUID，则写入这一行
-                            writer.get_mut().write_all(current_row_content.as_bytes())?;
+                        // 检查当前行是否需要删除
+                        let should_remove = if let Some(key) = remove_row_key {
+                            current_row_content.contains(key)
+                        } else {
+                            false
+                        };
+                        
+                        if !should_remove {
+                            // 处理数字类型转换
+                            let mut processed_content = if let Some(num_key) = to_number_key {
+                                process_number_cells(&current_row_content, num_key)?
+                            } else {
+                                current_row_content.clone()
+                            };
+                            
+                            // 处理公式类型转换
+                            if let Some(formula_key) = to_formula_key {
+                                processed_content = process_formula_cells(&processed_content, formula_key)?;
+                            }
+                            
+                            // 写入处理后的行
+                            writer.get_mut().write_all(processed_content.as_bytes())?;
                         }
-                        // 如果包含目标 UUID，则跳过整行
+                        // 如果包含删除标记，则跳过整行
                         
                         in_row = false;
                         current_row_content.clear();
@@ -1065,4 +1028,458 @@ pub(crate) fn remove_row_simple(
     
     let result = writer.into_inner().into_inner();
     Ok(String::from_utf8(result)?)
+}
+
+/// 处理行内容中的数字类型单元格
+/// 将包含 to_number_key 标记的单元格转换为数字格式
+/// 提取 <is> 标签内的文本，转换为 <v>数值</v> 格式
+fn process_number_cells(row_content: &str, to_number_key: &str) -> Result<String, Box<dyn std::error::Error>> {
+    // 如果不包含数字标记，直接返回
+    if !row_content.contains(to_number_key) {
+        return Ok(row_content.to_string());
+    }
+    
+    // 使用 XML 解析器来准确处理
+    let mut reader = Reader::from_str(row_content);
+    let mut output = String::new();
+    let mut buf = Vec::new();
+    
+    let mut in_cell = false;
+    let mut cell_attrs = Vec::new();
+    let mut cell_content = String::new();
+    
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                if e.name().as_ref() == b"c" {
+                    in_cell = true;
+                    cell_attrs.clear();
+                    cell_content.clear();
+                    
+                    // 保存所有属性
+                    for attr in e.attributes().flatten() {
+                        cell_attrs.push((
+                            String::from_utf8_lossy(attr.key.as_ref()).to_string(),
+                            String::from_utf8_lossy(&attr.value).to_string()
+                        ));
+                    }
+                } else if in_cell {
+                    // 收集单元格内的内容
+                    cell_content.push_str(&format!("<{}", String::from_utf8_lossy(e.name().as_ref())));
+                    for attr in e.attributes().flatten() {
+                        cell_content.push_str(&format!(" {}=\"{}\"", 
+                            String::from_utf8_lossy(attr.key.as_ref()),
+                            String::from_utf8_lossy(&attr.value)));
+                    }
+                    cell_content.push('>');
+                } else {
+                    // 非单元格内容，直接输出
+                    output.push_str(&format!("<{}", String::from_utf8_lossy(e.name().as_ref())));
+                    for attr in e.attributes().flatten() {
+                        output.push_str(&format!(" {}=\"{}\"", 
+                            String::from_utf8_lossy(attr.key.as_ref()),
+                            String::from_utf8_lossy(&attr.value)));
+                    }
+                    output.push('>');
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                if e.name().as_ref() == b"c" && in_cell {
+                    // 单元格结束，处理并输出
+                    cell_content.push_str("</c>");
+                    
+                    // 检查内容是否包含数字标记
+                    if cell_content.contains(to_number_key) {
+                        // 提取 <is> 标签内的所有 <t> 文本
+                        let text_value = extract_text_from_is(&cell_content, to_number_key)?;
+                        
+                        // 重新构建单元格，移除 t 属性
+                        output.push_str("<c");
+                        for (key, value) in &cell_attrs {
+                            if key != "t" {  // 移除 t 属性
+                                output.push_str(&format!(" {}=\"{}\"", key, value));
+                            }
+                        }
+                        output.push('>');
+                        
+                        // 添加 <v> 标签包含提取的数值
+                        output.push_str(&format!("<v>{}</v>", text_value));
+                        output.push_str("</c>");
+                    } else {
+                        // 非数字单元格，原样输出
+                        output.push_str("<c");
+                        for (key, value) in &cell_attrs {
+                            output.push_str(&format!(" {}=\"{}\"", key, value));
+                        }
+                        output.push('>');
+                        
+                        let content_without_tags = cell_content
+                            .strip_prefix("<c")
+                            .and_then(|s| s.find('>').map(|pos| &s[pos+1..]))
+                            .unwrap_or(&cell_content);
+                        let content_without_tags = content_without_tags
+                            .strip_suffix("</c>")
+                            .unwrap_or(content_without_tags);
+                        output.push_str(content_without_tags);
+                        output.push_str("</c>");
+                    }
+                    
+                    in_cell = false;
+                } else if in_cell {
+                    // 单元格内的结束标签
+                    cell_content.push_str(&format!("</{}>", String::from_utf8_lossy(e.name().as_ref())));
+                } else {
+                    // 非单元格内容
+                    output.push_str(&format!("</{}>", String::from_utf8_lossy(e.name().as_ref())));
+                }
+            }
+            Ok(Event::Text(ref e)) => {
+                let text = std::str::from_utf8(e)?;
+                if in_cell {
+                    cell_content.push_str(text);
+                } else {
+                    output.push_str(text);
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                if in_cell {
+                    cell_content.push_str(&format!("<{}", String::from_utf8_lossy(e.name().as_ref())));
+                    for attr in e.attributes().flatten() {
+                        cell_content.push_str(&format!(" {}=\"{}\"", 
+                            String::from_utf8_lossy(attr.key.as_ref()),
+                            String::from_utf8_lossy(&attr.value)));
+                    }
+                    cell_content.push_str("/>");
+                } else {
+                    output.push_str(&format!("<{}", String::from_utf8_lossy(e.name().as_ref())));
+                    for attr in e.attributes().flatten() {
+                        output.push_str(&format!(" {}=\"{}\"", 
+                            String::from_utf8_lossy(attr.key.as_ref()),
+                            String::from_utf8_lossy(&attr.value)));
+                    }
+                    output.push_str("/>");
+                }
+            }
+            Ok(Event::Eof) => break,
+            Ok(_) => {
+                // 其他事件跳过
+            }
+            Err(e) => return Err(format!("处理数字单元格时 XML 解析错误: {:?}", e).into()),
+        }
+        buf.clear();
+    }
+    
+    Ok(output)
+}
+
+/// 从 <is> 标签内提取所有 <t> 标签的文本内容，并移除数字标记
+fn extract_text_from_is(cell_content: &str, to_number_key: &str) -> Result<String, Box<dyn std::error::Error>> {
+    // cell_content 包含完整的单元格内容，可能格式不完整
+    // 我们需要找到 <is> 标签并提取其中的文本
+    
+    // 首先尝试找到 <is> 标签的位置
+    if let Some(is_start) = cell_content.find("<is") {
+        if let Some(is_end) = cell_content[is_start..].find("</is>") {
+            // 提取 <is>...</is> 部分
+            let is_content = &cell_content[is_start..is_start + is_end + 5]; // +5 for "</is>"
+            
+            // 解析这个片段
+            let mut reader = Reader::from_str(is_content);
+            reader.config_mut().check_end_names = false; // 不严格检查标签匹配
+            let mut buf = Vec::new();
+            let mut result = String::new();
+            let mut in_t = false;
+            
+            loop {
+                match reader.read_event_into(&mut buf) {
+                    Ok(Event::Start(ref e)) => {
+                        if e.name().as_ref() == b"t" {
+                            in_t = true;
+                        }
+                    }
+                    Ok(Event::End(ref e)) => {
+                        if e.name().as_ref() == b"t" {
+                            in_t = false;
+                        }
+                    }
+                    Ok(Event::Text(ref e)) => {
+                        if in_t {
+                            let text = std::str::from_utf8(e)?;
+                            result.push_str(text);
+                        }
+                    }
+                    Ok(Event::Eof) => break,
+                    Ok(_) => {}
+                    Err(e) => {
+                        // 如果解析失败，尝试简单的字符串搜索
+                        eprintln!("警告: XML 解析失败，使用简单方法提取: {:?}", e);
+                        return extract_text_simple(is_content, to_number_key);
+                    }
+                }
+                buf.clear();
+            }
+            
+            // 移除数字标记
+            let result = result.replace(to_number_key, "");
+            return Ok(result);
+        }
+    }
+    
+    // 如果没有找到 <is> 标签，尝试简单方法
+    extract_text_simple(cell_content, to_number_key)
+}
+
+/// 使用简单的字符串方法提取文本（备用方案）
+fn extract_text_simple(content: &str, to_number_key: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut result = String::new();
+    
+    // 查找所有 <t>...</t> 标签
+    let mut pos = 0;
+    while let Some(t_start) = content[pos..].find("<t>") {
+        let abs_start = pos + t_start + 3; // +3 for "<t>"
+        if let Some(t_end) = content[abs_start..].find("</t>") {
+            let abs_end = abs_start + t_end;
+            result.push_str(&content[abs_start..abs_end]);
+            pos = abs_end + 4; // +4 for "</t>"
+        } else {
+            break;
+        }
+    }
+    
+    // 移除数字标记
+    let result = result.replace(to_number_key, "");
+    Ok(result)
+}
+
+/// 处理行内容中的公式类型单元格
+/// 将包含 to_formula_key 标记的单元格转换为公式格式
+/// 提取 <is> 标签内的文本，转换为 <f>公式</f> 格式
+fn process_formula_cells(row_content: &str, to_formula_key: &str) -> Result<String, Box<dyn std::error::Error>> {
+    // 如果不包含公式标记，直接返回
+    if !row_content.contains(to_formula_key) {
+        return Ok(row_content.to_string());
+    }
+    
+    // 使用 XML 解析器来准确处理
+    let mut reader = Reader::from_str(row_content);
+    let mut output = String::new();
+    let mut buf = Vec::new();
+    
+    let mut in_cell = false;
+    let mut cell_attrs = Vec::new();
+    let mut cell_content = String::new();
+    
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                if e.name().as_ref() == b"c" {
+                    in_cell = true;
+                    cell_attrs.clear();
+                    cell_content.clear();
+                    
+                    // 保存所有属性
+                    for attr in e.attributes().flatten() {
+                        cell_attrs.push((
+                            String::from_utf8_lossy(attr.key.as_ref()).to_string(),
+                            String::from_utf8_lossy(&attr.value).to_string()
+                        ));
+                    }
+                } else if in_cell {
+                    // 收集单元格内的内容
+                    cell_content.push_str(&format!("<{}", String::from_utf8_lossy(e.name().as_ref())));
+                    for attr in e.attributes().flatten() {
+                        cell_content.push_str(&format!(" {}=\"{}\"", 
+                            String::from_utf8_lossy(attr.key.as_ref()),
+                            String::from_utf8_lossy(&attr.value)));
+                    }
+                    cell_content.push('>');
+                } else {
+                    // 非单元格内容，直接输出
+                    output.push_str(&format!("<{}", String::from_utf8_lossy(e.name().as_ref())));
+                    for attr in e.attributes().flatten() {
+                        output.push_str(&format!(" {}=\"{}\"", 
+                            String::from_utf8_lossy(attr.key.as_ref()),
+                            String::from_utf8_lossy(&attr.value)));
+                    }
+                    output.push('>');
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                if e.name().as_ref() == b"c" && in_cell {
+                    // 单元格结束，处理并输出
+                    cell_content.push_str("</c>");
+                    
+                    // 检查内容是否包含公式标记
+                    if cell_content.contains(to_formula_key) {
+                        // 提取 <is> 或 <f> 标签内的公式文本
+                        let formula_text = extract_formula_from_cell(&cell_content, to_formula_key)?;
+                        
+                        // 重新构建单元格，移除 t 属性
+                        output.push_str("<c");
+                        for (key, value) in &cell_attrs {
+                            if key != "t" {  // 移除 t 属性
+                                output.push_str(&format!(" {}=\"{}\"", key, value));
+                            }
+                        }
+                        output.push('>');
+                        
+                        // 添加 <f> 标签包含公式
+                        output.push_str(&format!("<f>{}</f>", formula_text));
+                        output.push_str("</c>");
+                    } else {
+                        // 非公式单元格，原样输出
+                        output.push_str("<c");
+                        for (key, value) in &cell_attrs {
+                            output.push_str(&format!(" {}=\"{}\"", key, value));
+                        }
+                        output.push('>');
+                        
+                        let content_without_tags = cell_content
+                            .strip_prefix("<c")
+                            .and_then(|s| s.find('>').map(|pos| &s[pos+1..]))
+                            .unwrap_or(&cell_content);
+                        let content_without_tags = content_without_tags
+                            .strip_suffix("</c>")
+                            .unwrap_or(content_without_tags);
+                        output.push_str(content_without_tags);
+                        output.push_str("</c>");
+                    }
+                    
+                    in_cell = false;
+                } else if in_cell {
+                    // 单元格内的结束标签
+                    cell_content.push_str(&format!("</{}>", String::from_utf8_lossy(e.name().as_ref())));
+                } else {
+                    // 非单元格内容
+                    output.push_str(&format!("</{}>", String::from_utf8_lossy(e.name().as_ref())));
+                }
+            }
+            Ok(Event::Text(ref e)) => {
+                let text = std::str::from_utf8(e)?;
+                if in_cell {
+                    cell_content.push_str(text);
+                } else {
+                    output.push_str(text);
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                if in_cell {
+                    cell_content.push_str(&format!("<{}", String::from_utf8_lossy(e.name().as_ref())));
+                    for attr in e.attributes().flatten() {
+                        cell_content.push_str(&format!(" {}=\"{}\"", 
+                            String::from_utf8_lossy(attr.key.as_ref()),
+                            String::from_utf8_lossy(&attr.value)));
+                    }
+                    cell_content.push_str("/>");
+                } else {
+                    output.push_str(&format!("<{}", String::from_utf8_lossy(e.name().as_ref())));
+                    for attr in e.attributes().flatten() {
+                        output.push_str(&format!(" {}=\"{}\"", 
+                            String::from_utf8_lossy(attr.key.as_ref()),
+                            String::from_utf8_lossy(&attr.value)));
+                    }
+                    output.push_str("/>");
+                }
+            }
+            Ok(Event::Eof) => break,
+            Ok(_) => {
+                // 其他事件跳过
+            }
+            Err(e) => return Err(format!("处理公式单元格时 XML 解析错误: {:?}", e).into()),
+        }
+        buf.clear();
+    }
+    
+    Ok(output)
+}
+
+/// 从单元格内容中提取公式文本
+/// 可能来自 <is><t>标记公式</t></is> 或 <f>标记公式</f> 标签
+fn extract_formula_from_cell(cell_content: &str, to_formula_key: &str) -> Result<String, Box<dyn std::error::Error>> {
+    // 首先尝试从 <is> 标签提取（类似数字的处理）
+    if let Some(is_start) = cell_content.find("<is") {
+        if let Some(is_end) = cell_content[is_start..].find("</is>") {
+            let is_content = &cell_content[is_start..is_start + is_end + 5];
+            
+            let mut reader = Reader::from_str(is_content);
+            reader.config_mut().check_end_names = false;
+            let mut buf = Vec::new();
+            let mut result = String::new();
+            let mut in_t = false;
+            
+            loop {
+                match reader.read_event_into(&mut buf) {
+                    Ok(Event::Start(ref e)) => {
+                        if e.name().as_ref() == b"t" {
+                            in_t = true;
+                        }
+                    }
+                    Ok(Event::End(ref e)) => {
+                        if e.name().as_ref() == b"t" {
+                            in_t = false;
+                        }
+                    }
+                    Ok(Event::Text(ref e)) => {
+                        if in_t {
+                            let text = std::str::from_utf8(e)?;
+                            result.push_str(text);
+                        }
+                    }
+                    Ok(Event::Eof) => break,
+                    Ok(_) => {}
+                    Err(e) => {
+                        eprintln!("警告: XML 解析失败，使用简单方法提取: {:?}", e);
+                        return extract_formula_simple(cell_content, to_formula_key);
+                    }
+                }
+                buf.clear();
+            }
+            
+            let result = result.replace(to_formula_key, "");
+            return Ok(result);
+        }
+    }
+    
+    // 尝试从 <f> 标签提取
+    if let Some(f_start) = cell_content.find("<f>") {
+        if let Some(f_end) = cell_content[f_start + 3..].find("</f>") {
+            let formula = &cell_content[f_start + 3..f_start + 3 + f_end];
+            let formula = formula.replace(to_formula_key, "");
+            return Ok(formula);
+        }
+    }
+    
+    // 备用简单方法
+    extract_formula_simple(cell_content, to_formula_key)
+}
+
+/// 使用简单的字符串方法提取公式文本（备用方案）
+fn extract_formula_simple(content: &str, to_formula_key: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let mut result = String::new();
+    
+    // 首先尝试从 <f> 标签提取
+    if let Some(f_start) = content.find("<f>") {
+        if let Some(f_end) = content[f_start + 3..].find("</f>") {
+            result = content[f_start + 3..f_start + 3 + f_end].to_string();
+        }
+    }
+    
+    // 如果没有找到，从 <t> 标签提取
+    if result.is_empty() {
+        let mut pos = 0;
+        while let Some(t_start) = content[pos..].find("<t>") {
+            let abs_start = pos + t_start + 3;
+            if let Some(t_end) = content[abs_start..].find("</t>") {
+                let abs_end = abs_start + t_end;
+                result.push_str(&content[abs_start..abs_end]);
+                pos = abs_end + 4;
+            } else {
+                break;
+            }
+        }
+    }
+    
+    // 移除公式标记
+    let result = result.replace(to_formula_key, "");
+    Ok(result)
 }

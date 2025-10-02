@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::{io::{Cursor, Read, Write}, sync::{Arc, Mutex}};
 use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
 use std::collections::HashMap;
-use crate::{utils::{excel_column_name, merge_handlebars_in_xml, register_basic_helpers, remove_row_simple, replace_shared_strings_in_sheet, validate_xlsx_format}, XlsxError};
+use crate::{utils::{excel_column_name, merge_handlebars_in_xml, register_basic_helpers, post_process_xml, replace_shared_strings_in_sheet, validate_xlsx_format}, XlsxError};
 
 use handlebars::{Handlebars, RenderErrorReason};
 // use uuid::Uuid;
@@ -10,7 +10,15 @@ use handlebars::{Handlebars, RenderErrorReason};
 
 /// 用于标记需要删除的行的 UUID
 /// 配合 {{removeRow}} helper 使用
-const REMOVE_ROW_KEY: &str = "xlsx-remove-row-f8e7d6c5-b4a3-9182-7e6f-5d4c3b2a1091";
+const REMOVE_ROW_KEY: &str = "|e5nBk+z4RMKqlyBo+xQ48A-remove-row|";
+
+/// 用于标记数字类型的 UUID
+/// 配合 {{num aa}} helper 使用
+const TO_NUMBER_KEY: &str = "|e5nBk+z4RMKqlyBo+xQ48A-num|";
+
+/// 用于标记公式类型的 UUID
+/// 配合 {{formula "=SUM(A1:B1)"}} helper 使用
+const TO_FORMULA_KEY: &str = "|e5nBk+z4RMKqlyBo+xQ48A-formula|";
 
 pub fn render_handlebars(
   zip_bytes: Vec<u8>,
@@ -215,6 +223,76 @@ pub fn render_handlebars(
     Ok(())
   }));
   
+  // 标记数字类型的 helper
+  // 用法: <c r="{{_cr}}"><v>{{num some_value}}</v></c>
+  handlebars.register_helper("num", Box::new(move |h: &handlebars::Helper, _: &Handlebars, _: &handlebars::Context, _: &mut handlebars::RenderContext, out: &mut dyn handlebars::Output| -> handlebars::HelperResult {
+    out.write(TO_NUMBER_KEY)?; // 先写入标记，后续处理时替换
+    if let Some(param) = h.param(0) {
+      if param.value().is_number() {
+        out.write(&param.value().to_string())?;
+      } else if param.value().is_string() {
+        let s = param.value().as_str().unwrap();
+        if let Ok(n) = s.parse::<f64>() {
+          out.write(&n.to_string())?;
+        } else {
+          out.write("0")?; // 解析失败则输出 0
+        }
+      } else {
+        out.write("0")?; // 其他类型则输出 0
+      }
+    } else {
+      out.write("0")?; // 没有参数则输出 0
+    }
+    Ok(())
+  }));
+  
+  // 标记公式类型的 helper
+  // 用法: <c r="{{_cr}}"><f>{{formula "=SUM(A1:B1)"}}</f></c>
+  handlebars.register_helper("formula", Box::new(move |h: &handlebars::Helper, _: &Handlebars, _: &handlebars::Context, _: &mut handlebars::RenderContext, out: &mut dyn handlebars::Output| -> handlebars::HelperResult {
+    out.write(TO_FORMULA_KEY)?; // 先写入标记，后续处理时替换
+    if let Some(param) = h.param(0) {
+      if param.value().is_string() {
+        let formula = param.value().as_str().unwrap();
+        out.write(formula)?;
+      } else {
+        out.write("")?; // 非字符串则输出空
+      }
+    } else {
+      out.write("")?; // 没有参数则输出空
+    }
+    Ok(())
+  }));
+  
+  // 字符串拼接 helper
+  // 用法: {{concat "=SUM(" (_c) "1:" (_c) "10)"}}
+  // 或者: {{formula (concat "=SUM(" (_c) "1:" (_c) "10)")}}
+  // 可以接受任意数量的参数，将它们全部拼接成一个字符串
+  handlebars.register_helper("concat", Box::new(|h: &handlebars::Helper, _: &Handlebars, _: &handlebars::Context, _: &mut handlebars::RenderContext, out: &mut dyn handlebars::Output| -> handlebars::HelperResult {
+    let mut result = String::new();
+    
+    // 遍历所有参数并拼接
+    for param in h.params() {
+      let value = param.value();
+      
+      // 根据类型转换为字符串
+      if value.is_string() {
+        result.push_str(value.as_str().unwrap());
+      } else if value.is_number() {
+        result.push_str(&value.to_string());
+      } else if value.is_boolean() {
+        result.push_str(&value.to_string());
+      } else if value.is_null() {
+        // null 不添加任何内容
+      } else {
+        // 其他类型（对象、数组等）转为 JSON 字符串
+        result.push_str(&value.to_string());
+      }
+    }
+    
+    out.write(&result)?;
+    Ok(())
+  }));
+  
   // 遍历 sheet.xml 找到所有 t="s" 的 c 标签, 把 v 标签中的数字替换成对应的字符串
   // 例如: <c r="A1" t="s"><v>0</v></c> 替换成 <c r="A1" t="inlineStr"><is><t>字符串内容</t></is></c>
   {
@@ -242,9 +320,12 @@ pub fn render_handlebars(
           XlsxError::TemplateRenderError(reason.to_string())
         })?;
         
-        // 删除包含 removeRow 标记的行
-        if xml_content.contains(REMOVE_ROW_KEY) {
-          xml_content = remove_row_simple(&xml_content, REMOVE_ROW_KEY)?;
+        // 后处理：删除标记行、转换数字类型、转换公式类型等
+        if xml_content.contains(REMOVE_ROW_KEY) || xml_content.contains(TO_NUMBER_KEY) || xml_content.contains(TO_FORMULA_KEY) {
+          let remove_key = if xml_content.contains(REMOVE_ROW_KEY) { Some(REMOVE_ROW_KEY) } else { None };
+          let number_key = if xml_content.contains(TO_NUMBER_KEY) { Some(TO_NUMBER_KEY) } else { None };
+          let formula_key = if xml_content.contains(TO_FORMULA_KEY) { Some(TO_FORMULA_KEY) } else { None };
+          xml_content = post_process_xml(&xml_content, remove_key, number_key, formula_key)?;
         }
         
         *contents = xml_content.into_bytes();

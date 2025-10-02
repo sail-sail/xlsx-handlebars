@@ -4,7 +4,7 @@
     "sail-sail <151263555@qq.com>"
   ],
   "description": "A Rust library for processing XLSX files with Handlebars templates, supporting WASM, Node.js, Deno, and browsers",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT",
   "repository": {
     "type": "git",

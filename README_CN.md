@@ -246,13 +246,67 @@ if (import.meta.main) {
 内置的 Helper 函数：
 
 ```handlebars
+<!-- 基础 helper -->
 {{upper name}}           <!-- 转大写 -->
 {{lower company}}        <!-- 转小写 -->
 {{len projects}}         <!-- 数组长度 -->
 {{#if (eq status "completed")}}已完成{{/if}}    <!-- 相等比较 -->
 {{#if (gt score 90)}}优秀{{/if}}               <!-- 大于比较 -->
 {{#if (lt age 30)}}年轻{{/if}}                 <!-- 小于比较 -->
+
+<!-- 字符串拼接 -->
+{{concat "你好" " " "世界"}}                    <!-- 字符串拼接 -->
+{{concat "总计: " count}}                      <!-- 混合字符串和变量 -->
+
+<!-- Excel 专用 helper -->
+{{num employee.salary}}                         <!-- 标记单元格为数字类型 -->
+{{formula "=SUM(A1:B1)"}}                      <!-- 静态 Excel 公式 -->
+{{formula (concat "=SUM(" (_c) "1:" (_c) "10)")}} <!-- 使用当前列的动态公式 -->
 ```
+
+#### Excel 公式 Helper
+
+**静态公式**:
+```handlebars
+<!-- 在 Excel 单元格中 -->
+{{formula "=SUM(A1:B1)"}}
+{{formula "=AVERAGE(C2:C10)"}}
+{{formula "=IF(D1>100,\"高\",\"低\")"}}
+```
+
+**使用 `concat` 的动态公式**:
+```handlebars
+<!-- 动态行引用 -->
+{{formula (concat "=A" (_r) "*B" (_r))}}
+
+<!-- 动态列引用 -->
+{{formula (concat "=SUM(" (_c) "2:" (_c) "10)")}}
+
+<!-- 复杂动态公式 -->
+{{formula (concat "=IF(" (_cr) ">100,\"高\",\"低\")")}}
+```
+
+**可用的位置 helper**:
+- `(_c)` - 当前列字母 (A, B, C, ...)
+- `(_r)` - 当前行号 (1, 2, 3, ...)
+- `(_cr)` - 当前单元格引用 (A1, B2, C3, ...)
+
+#### 数字类型 Helper
+
+使用 `{{num value}}` 确保单元格在 Excel 中被识别为数字：
+
+```handlebars
+<!-- 不使用 num: 当作文本处理 -->
+{{employee.salary}}
+
+<!-- 使用 num: 当作数字处理 -->
+{{num employee.salary}}
+```
+
+特别适用于以下场景：
+- 值可能是字符串但应当作数字处理
+- 需要确保 Excel 中的数字格式正确
+- 需要在公式中使用该值
 
 ### 复杂示例
 

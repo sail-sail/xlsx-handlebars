@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/xlsx-handlebars/badge.svg)](https://docs.rs/xlsx-handlebars)
 [![License](https://img.shields.io/crates/l/xlsx-handlebars.svg)](https://github.com/sail-sail/xlsx-handlebars#license)
 
-English | [中文文档](README_zh.md)
+English | [中文文档](README_CN.md)
 
 A Rust library for processing XLSX files with Handlebars templates, supporting multiple platforms:
 - 🦀 Rust Native
@@ -246,13 +246,67 @@ Skills:
 Built-in Helper functions:
 
 ```handlebars
+<!-- Basic helpers -->
 {{upper name}}           <!-- Convert to uppercase -->
 {{lower company}}        <!-- Convert to lowercase -->
 {{len projects}}         <!-- Array length -->
 {{#if (eq status "completed")}}Completed{{/if}}    <!-- Equality comparison -->
 {{#if (gt score 90)}}Excellent{{/if}}              <!-- Greater than comparison -->
 {{#if (lt age 30)}}Young{{/if}}                    <!-- Less than comparison -->
+
+<!-- String concatenation -->
+{{concat "Hello" " " "World"}}                     <!-- String concatenation -->
+{{concat "Total: " count}}                         <!-- Mix strings and variables -->
+
+<!-- Excel-specific helpers -->
+{{num employee.salary}}                            <!-- Mark cell as number type -->
+{{formula "=SUM(A1:B1)"}}                         <!-- Static Excel formula -->
+{{formula (concat "=SUM(" (_c) "1:" (_c) "10)")}} <!-- Dynamic formula with current column -->
 ```
+
+#### Excel Formula Helpers
+
+**Static Formula**:
+```handlebars
+<!-- In Excel cell -->
+{{formula "=SUM(A1:B1)"}}
+{{formula "=AVERAGE(C2:C10)"}}
+{{formula "=IF(D1>100,\"High\",\"Low\")"}}
+```
+
+**Dynamic Formula with `concat`**:
+```handlebars
+<!-- Dynamic row reference -->
+{{formula (concat "=A" (_r) "*B" (_r))}}
+
+<!-- Dynamic column reference -->
+{{formula (concat "=SUM(" (_c) "2:" (_c) "10)")}}
+
+<!-- Complex dynamic formula -->
+{{formula (concat "=IF(" (_cr) ">100,\"High\",\"Low\")")}}
+```
+
+**Available position helpers**:
+- `(_c)` - Current column letter (A, B, C, ...)
+- `(_r)` - Current row number (1, 2, 3, ...)
+- `(_cr)` - Current cell reference (A1, B2, C3, ...)
+
+#### Number Type Helper
+
+Use `{{num value}}` to ensure a cell is treated as a number in Excel:
+
+```handlebars
+<!-- Without num: treated as text -->
+{{employee.salary}}
+
+<!-- With num: treated as number -->
+{{num employee.salary}}
+```
+
+This is especially useful when:
+- The value might be a string but should be treated as a number
+- You want to ensure proper number formatting in Excel
+- You need the value to work in formulas
 
 ### Complex Example
 
