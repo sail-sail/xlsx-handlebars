@@ -262,6 +262,13 @@ if (import.meta.main) {
 {{num employee.salary}}                         <!-- 标记单元格为数字类型 -->
 {{formula "=SUM(A1:B1)"}}                      <!-- 静态 Excel 公式 -->
 {{formula (concat "=SUM(" (_c) "1:" (_c) "10)")}} <!-- 使用当前列的动态公式 -->
+{{mergeCell "C4:D5"}}                          <!-- 合并单元格 C4 到 D5 -->
+{{img logo.data 100 100}}                       <!-- 插入图片，指定宽高 -->
+
+<!-- 列名转换 helper -->
+{{toColumnName "A" 5}}                          <!-- A + 5 偏移 = F -->
+{{toColumnName (_c) 3}}                         <!-- 当前列向右偏移 3 列 -->
+{{toColumnIndex "AA"}}                          <!-- AA 列的索引 = 27 -->
 ```
 
 #### Excel 公式 Helper
@@ -291,6 +298,63 @@ if (import.meta.main) {
 - `(_r)` - 当前行号 (1, 2, 3, ...)
 - `(_cr)` - 当前单元格引用 (A1, B2, C3, ...)
 
+#### 列名转换 Helper
+
+**`toColumnName`** - 将列名或列索引转换为新的列名，支持偏移量：
+
+```handlebars
+<!-- 基础用法：从指定列名开始偏移 -->
+{{toColumnName "A" 0}}     <!-- A (无偏移) -->
+{{toColumnName "A" 5}}     <!-- F (A + 5) -->
+{{toColumnName "Z" 1}}     <!-- AA (Z + 1) -->
+
+<!-- 配合当前列使用 -->
+{{toColumnName (_c) 3}}    <!-- 当前列向右偏移 3 列 -->
+
+<!-- 动态公式中的应用 -->
+{{formula (concat "=SUM(" (_c) "1:" (toColumnName (_c) 3) "1)")}}
+<!-- 示例：如果当前列是 B，生成公式 =SUM(B1:E1) -->
+```
+
+**`toColumnIndex`** - 将列名转换为列索引（1-based）：
+
+```handlebars
+{{toColumnIndex "A"}}      <!-- 1 -->
+{{toColumnIndex "Z"}}      <!-- 26 -->
+{{toColumnIndex "AA"}}     <!-- 27 -->
+{{toColumnIndex "AB"}}     <!-- 28 -->
+```
+
+#### 合并单元格 Helper
+
+**`mergeCell`** - 标记需要合并的单元格范围：
+
+```handlebars
+<!-- 静态合并单元格 -->
+{{mergeCell "C4:D5"}}      <!-- 合并 C4 到 D5 区域 -->
+{{mergeCell "F4:G4"}}      <!-- 合并 F4 到 G4 区域 -->
+
+<!-- 动态合并单元格：从当前位置合并 -->
+{{mergeCell (concat (_c) (_r) ":" (toColumnName (_c) 3) (_r))}}
+<!-- 示例：如果当前在 B5，合并 B5:E5（向右合并4列） -->
+
+<!-- 动态合并单元格：跨行跨列 -->
+{{mergeCell (concat (_c) (_r) ":" (toColumnName (_c) 2) (add (_r) 2))}}
+<!-- 示例：如果当前在 C3，合并 C3:E5（3列×3行的区域） -->
+
+<!-- 在循环中动态合并 -->
+{{#each sections}}
+  {{mergeCell (concat "A" (add @index 2) ":D" (add @index 2))}}
+  <!-- 为每个 section 合并一行的 A-D 列 -->
+{{/each}}
+```
+
+**注意事项**：
+- `mergeCell` 不产生输出，仅收集合并信息
+- 合并范围格式必须是 `起始单元格:结束单元格`（如 `"A1:B2"`）
+- 相同的合并范围会自动去重
+- 合并信息会在渲染完成后自动添加到 Excel 文件中
+
 #### 数字类型 Helper
 
 使用 `{{num value}}` 确保单元格在 Excel 中被识别为数字：
@@ -307,6 +371,82 @@ if (import.meta.main) {
 - 值可能是字符串但应当作数字处理
 - 需要确保 Excel 中的数字格式正确
 - 需要在公式中使用该值
+
+#### 图片插入 Helper
+
+**`img`** - 在 Excel 中插入 base64 编码的图片：
+
+```handlebars
+<!-- 基础用法：插入图片并使用原始尺寸 -->
+{{img logo.data}}
+
+<!-- 指定宽度和高度（单位：像素） -->
+{{img photo.data 150 200}}
+
+<!-- 使用数据中的尺寸 -->
+{{img image.data image.width image.height}}
+```
+
+**特性**：
+- ✅ 支持 PNG、JPEG、WebP、BMP、TIFF、GIF 等常见图片格式
+- ✅ 自动检测图片实际尺寸
+- ✅ 可选指定宽度和高度（像素）
+- ✅ 图片定位在当前单元格位置
+- ✅ 图片不受单元格大小限制，保持比例
+- ✅ 支持同一 sheet 插入多张图片
+- ✅ 支持多个 sheet 各自插入图片
+- ✅ 使用 UUID 避免 ID 冲突
+
+**完整示例**：
+
+```javascript
+// 在 JavaScript 中准备图片数据
+import fs from 'fs';
+
+const imageBuffer = fs.readFileSync('logo.png');
+const base64Image = imageBuffer.toString('base64');
+
+const data = {
+  company: {
+    logo: base64Image,
+    name: "科技公司"
+  },
+  products: [
+    {
+      name: "产品A",
+      photo: base64Image,
+      width: 120,
+      height: 120
+    },
+    {
+      name: "产品B", 
+      photo: base64Image,
+      width: 100,
+      height: 100
+    }
+  ]
+};
+
+// 在模板中使用
+```
+
+```handlebars
+<!-- Excel 模板示例 -->
+公司Logo: {{img company.logo 100 50}}
+
+产品列表:
+{{#each products}}
+产品名: {{name}}
+图片: {{img photo width height}}
+{{/each}}
+```
+
+**使用技巧**：
+- 如果只指定宽度，高度会等比例缩放
+- 如果只指定高度，宽度会等比例缩放
+- 如果都不指定，使用图片原始尺寸
+- 图片会放置在调用 `{{img}}` 的单元格位置
+- base64 数据不包含 `data:image/png;base64,` 前缀，只需要纯 base64 字符串
 
 ### 复杂示例
 

@@ -262,6 +262,13 @@ Built-in Helper functions:
 {{num employee.salary}}                            <!-- Mark cell as number type -->
 {{formula "=SUM(A1:B1)"}}                         <!-- Static Excel formula -->
 {{formula (concat "=SUM(" (_c) "1:" (_c) "10)")}} <!-- Dynamic formula with current column -->
+{{mergeCell "C4:D5"}}                             <!-- Merge cells C4 to D5 -->
+{{img logo.data 100 100}}                          <!-- Insert image with width and height -->
+
+<!-- Column name conversion helpers -->
+{{toColumnName "A" 5}}                             <!-- A + 5 offset = F -->
+{{toColumnName (_c) 3}}                            <!-- Current column + 3 offset -->
+{{toColumnIndex "AA"}}                             <!-- AA column index = 27 -->
 ```
 
 #### Excel Formula Helpers
@@ -291,6 +298,63 @@ Built-in Helper functions:
 - `(_r)` - Current row number (1, 2, 3, ...)
 - `(_cr)` - Current cell reference (A1, B2, C3, ...)
 
+#### Column Name Conversion Helpers
+
+**`toColumnName`** - Convert column name or index to a new column name with optional offset:
+
+```handlebars
+<!-- Basic usage: offset from specified column -->
+{{toColumnName "A" 0}}     <!-- A (no offset) -->
+{{toColumnName "A" 5}}     <!-- F (A + 5) -->
+{{toColumnName "Z" 1}}     <!-- AA (Z + 1) -->
+
+<!-- Use with current column -->
+{{toColumnName (_c) 3}}    <!-- Current column + 3 offset -->
+
+<!-- Application in dynamic formulas -->
+{{formula (concat "=SUM(" (_c) "1:" (toColumnName (_c) 3) "1)")}}
+<!-- Example: If current column is B, generates formula =SUM(B1:E1) -->
+```
+
+**`toColumnIndex`** - Convert column name to column index (1-based):
+
+```handlebars
+{{toColumnIndex "A"}}      <!-- 1 -->
+{{toColumnIndex "Z"}}      <!-- 26 -->
+{{toColumnIndex "AA"}}     <!-- 27 -->
+{{toColumnIndex "AB"}}     <!-- 28 -->
+```
+
+#### Merge Cells Helper
+
+**`mergeCell`** - Mark cell ranges that need to be merged:
+
+```handlebars
+<!-- Static cell merging -->
+{{mergeCell "C4:D5"}}      <!-- Merge C4 to D5 region -->
+{{mergeCell "F4:G4"}}      <!-- Merge F4 to G4 region -->
+
+<!-- Dynamic cell merging: from current position -->
+{{mergeCell (concat (_c) (_r) ":" (toColumnName (_c) 3) (_r))}}
+<!-- Example: If current is B5, merges B5:E5 (4 columns to the right) -->
+
+<!-- Dynamic cell merging: spanning rows and columns -->
+{{mergeCell (concat (_c) (_r) ":" (toColumnName (_c) 2) (add (_r) 2))}}
+<!-- Example: If current is C3, merges C3:E5 (3×3 region) -->
+
+<!-- Dynamic merging in loops -->
+{{#each sections}}
+  {{mergeCell (concat "A" (add @index 2) ":D" (add @index 2))}}
+  <!-- Merge columns A-D for each section row -->
+{{/each}}
+```
+
+**Notes**:
+- `mergeCell` produces no output, only collects merge information
+- Merge range format must be `StartCell:EndCell` (e.g., `"A1:B2"`)
+- Duplicate merge ranges are automatically deduplicated
+- Merge information is automatically added to the Excel file after rendering
+
 #### Number Type Helper
 
 Use `{{num value}}` to ensure a cell is treated as a number in Excel:
@@ -307,6 +371,82 @@ This is especially useful when:
 - The value might be a string but should be treated as a number
 - You want to ensure proper number formatting in Excel
 - You need the value to work in formulas
+
+#### Image Insertion Helper
+
+**`img`** - Insert base64-encoded images into Excel:
+
+```handlebars
+<!-- Basic usage: insert image with original dimensions -->
+{{img logo.data}}
+
+<!-- Specify width and height (in pixels) -->
+{{img photo.data 150 200}}
+
+<!-- Use dimensions from data -->
+{{img image.data image.width image.height}}
+```
+
+**Features**:
+- ✅ Supports common image formats: PNG, JPEG, WebP, BMP, TIFF, GIF
+- ✅ Auto-detects actual image dimensions
+- ✅ Optional width and height specification (in pixels)
+- ✅ Image positioned at current cell location
+- ✅ Images are not constrained by cell size, maintain aspect ratio
+- ✅ Supports multiple images in the same sheet
+- ✅ Supports images in multiple sheets
+- ✅ Uses UUID to avoid ID conflicts
+
+**Complete Example**:
+
+```javascript
+// Prepare image data in JavaScript
+import fs from 'fs';
+
+const imageBuffer = fs.readFileSync('logo.png');
+const base64Image = imageBuffer.toString('base64');
+
+const data = {
+  company: {
+    logo: base64Image,
+    name: "Tech Company"
+  },
+  products: [
+    {
+      name: "Product A",
+      photo: base64Image,
+      width: 120,
+      height: 120
+    },
+    {
+      name: "Product B", 
+      photo: base64Image,
+      width: 100,
+      height: 100
+    }
+  ]
+};
+
+// Use in template
+```
+
+```handlebars
+<!-- Excel template example -->
+Company Logo: {{img company.logo 100 50}}
+
+Product List:
+{{#each products}}
+Product Name: {{name}}
+Image: {{img photo width height}}
+{{/each}}
+```
+
+**Usage Tips**:
+- If only width is specified, height scales proportionally
+- If only height is specified, width scales proportionally
+- If neither is specified, original image dimensions are used
+- Image will be placed at the cell location where `{{img}}` is called
+- base64 data should not include the `data:image/png;base64,` prefix, just the pure base64 string
 
 ### Complex Example
 

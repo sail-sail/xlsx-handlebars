@@ -903,13 +903,17 @@ mod tests {
 /// 
 /// # 参数
 /// * `xml_content` - sheet.xml 的 XML 内容
-/// * `target_uuid` - 要查找和删除的 UUID 标记
+/// * `remove_key` - 要查找和删除的行标记
+/// * `to_number_key` - 数字类型转换标记
+/// * `to_formula_key` - 公式类型转换标记
+/// * `merge_cells` - 需要合并的单元格范围列表
 /// ```
 pub(crate) fn post_process_xml(
     xml_content: &str, 
-    remove_row_key: Option<&str>,
+    remove_key: Option<&str>,
     to_number_key: Option<&str>,
-    to_formula_key: Option<&str>
+    to_formula_key: Option<&str>,
+    merge_cells: Option<&[String]>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut reader = Reader::from_str(xml_content);
     let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -954,7 +958,7 @@ pub(crate) fn post_process_xml(
                         current_row_content.push_str(&format!("</{}>", String::from_utf8_lossy(e.name().as_ref())));
                         
                         // 检查当前行是否需要删除
-                        let should_remove = if let Some(key) = remove_row_key {
+                        let should_remove = if let Some(key) = remove_key {
                             current_row_content.contains(key)
                         } else {
                             false
@@ -986,7 +990,36 @@ pub(crate) fn post_process_xml(
                 } else if in_row {
                     current_row_content.push_str(&format!("</{}>", String::from_utf8_lossy(e.name().as_ref())));
                 } else {
-                    writer.write_event(Event::End(e.clone()))?;
+                    // 检查是否是 sheetData 结束标签
+                    if e.name().as_ref() == b"sheetData" {
+                        // 先输出 sheetData 结束标签
+                        writer.write_event(Event::End(e.clone()))?;
+                        
+                        // 如果有合并单元格信息，插入 mergeCells 标签
+                        if let Some(refs) = merge_cells {
+                            if !refs.is_empty() {
+                                // 去重处理
+                                let mut unique_refs: Vec<String> = refs.to_vec();
+                                unique_refs.sort();
+                                unique_refs.dedup();
+                                
+                                // 生成 mergeCells XML
+                                let merge_cells_xml = format!(
+                                    "<mergeCells count=\"{}\">{}</mergeCells>",
+                                    unique_refs.len(),
+                                    unique_refs.iter()
+                                        .map(|r| format!("<mergeCell ref=\"{}\"/>", r))
+                                        .collect::<Vec<_>>()
+                                        .join("")
+                                );
+                                
+                                // 写入 mergeCells
+                                writer.get_mut().write_all(merge_cells_xml.as_bytes())?;
+                            }
+                        }
+                    } else {
+                        writer.write_event(Event::End(e.clone()))?;
+                    }
                 }
             }
             Ok(Event::Text(ref e)) => {

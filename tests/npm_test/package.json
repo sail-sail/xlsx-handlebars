@@ -11,6 +11,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "xlsx-handlebars": "0.1.2"
+    "xlsx-handlebars": "0.1.3"
   }
 }
