@@ -28,15 +28,240 @@ pub(crate) fn validate_xlsx_format(file_data: &[u8]) -> Result<(), XlsxError> {
     Ok(())
 }
 
-// /// XML 转义符转换成正常字符
-// pub fn xml_escape_to_normal(xml_content: String) -> String {
-//     xml_content
-//         .replace("&lt;", "<")
-//         .replace("&gt;", ">")
-//         .replace("&amp;", "&")
-//         .replace("&quot;", "\"")
-//         .replace("&apos;", "'")
-// }
+/// 超链接信息结构
+#[derive(Debug, Clone)]
+pub(crate) struct HyperlinkInfo {
+    pub ref_cell: String,     // 单元格引用，如 "A26"
+    pub location: String,     // 链接目标，如 "被链接的工作表!A1"
+    pub display: String,      // 显示文本（可选）
+}
+
+/// 从 sheet XML 中提取并移除 mergeCells 和 hyperlinks 标签
+/// 
+/// 这个函数会：
+/// 1. 找到并移除 <mergeCells> 标签及其内容，提取合并单元格范围
+/// 2. 找到并移除 <hyperlinks> 标签及其内容，提取超链接信息
+/// 3. 返回去除标签后的 XML、合并范围列表和超链接列表
+/// 
+/// 注意：提取的范围是静态的，不包含行号/列号偏移
+/// 需要在渲染过程中通过 helper 动态添加偏移后的范围
+pub(crate) fn extract_and_remove_merge_cells_and_hyperlinks(
+    sheet_xml: &str
+) -> Result<(String, Vec<String>, Vec<HyperlinkInfo>), Box<dyn std::error::Error>> {
+    let mut merge_refs = Vec::new();
+    let mut hyperlinks = Vec::new();
+    let mut result_xml = sheet_xml.to_string();
+    
+    // 1. 提取并移除 mergeCells 标签
+    if let Some(start) = result_xml.find("<mergeCells") {
+        let after_start = &result_xml[start..];
+        
+        if let Some(end) = after_start.find("</mergeCells>") {
+            // 完整标签: <mergeCells>...</mergeCells>
+            let merge_cells_content = &after_start[..end + "</mergeCells>".len()];
+            
+            // 提取所有 ref 属性
+            let mut pos = 0;
+            while let Some(ref_pos) = merge_cells_content[pos..].find("ref=\"") {
+                let abs_ref_pos = pos + ref_pos + 5;
+                if let Some(quote_pos) = merge_cells_content[abs_ref_pos..].find('"') {
+                    let ref_value = &merge_cells_content[abs_ref_pos..abs_ref_pos + quote_pos];
+                    merge_refs.push(ref_value.to_string());
+                    pos = abs_ref_pos + quote_pos;
+                } else {
+                    break;
+                }
+            }
+            
+            // 移除整个 mergeCells 标签
+            result_xml = format!("{}{}", &result_xml[..start], &result_xml[start + merge_cells_content.len()..]);
+        } else if let Some(end) = after_start.find("/>") {
+            // 自闭合标签: <mergeCells ... />
+            let merge_cells_content = &after_start[..end + "/>".len()];
+            
+            // 提取所有 ref 属性
+            let mut pos = 0;
+            while let Some(ref_pos) = merge_cells_content[pos..].find("ref=\"") {
+                let abs_ref_pos = pos + ref_pos + 5;
+                if let Some(quote_pos) = merge_cells_content[abs_ref_pos..].find('"') {
+                    let ref_value = &merge_cells_content[abs_ref_pos..abs_ref_pos + quote_pos];
+                    merge_refs.push(ref_value.to_string());
+                    pos = abs_ref_pos + quote_pos;
+                } else {
+                    break;
+                }
+            }
+            
+            // 移除整个 mergeCells 标签
+            result_xml = format!("{}{}", &result_xml[..start], &result_xml[start + merge_cells_content.len()..]);
+        }
+    }
+    
+    // 2. 提取并移除 hyperlinks 标签
+    if let Some(start) = result_xml.find("<hyperlinks") {
+        let after_start = &result_xml[start..];
+        
+        if let Some(end) = after_start.find("</hyperlinks>") {
+            // 完整标签: <hyperlinks>...</hyperlinks>
+            let hyperlinks_content = &after_start[..end + "</hyperlinks>".len()];
+            
+            // 提取所有 hyperlink 节点
+            let mut pos = 0;
+            while let Some(link_start) = hyperlinks_content[pos..].find("<hyperlink ") {
+                let abs_link_start = pos + link_start;
+                if let Some(link_end) = hyperlinks_content[abs_link_start..].find("/>") {
+                    let link_tag = &hyperlinks_content[abs_link_start..abs_link_start + link_end + 2];
+                    
+                    // 提取 ref 属性
+                    let ref_cell = if let Some(ref_start) = link_tag.find("ref=\"") {
+                        let ref_value_start = ref_start + 5;
+                        if let Some(ref_end) = link_tag[ref_value_start..].find('"') {
+                            link_tag[ref_value_start..ref_value_start + ref_end].to_string()
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    
+                    // 提取 location 属性
+                    let location = if let Some(loc_start) = link_tag.find("location=\"") {
+                        let loc_value_start = loc_start + 10;
+                        if let Some(loc_end) = link_tag[loc_value_start..].find('"') {
+                            link_tag[loc_value_start..loc_value_start + loc_end].to_string()
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    
+                    // 提取 display 属性（可选）
+                    let display = if let Some(disp_start) = link_tag.find("display=\"") {
+                        let disp_value_start = disp_start + 9;
+                        if let Some(disp_end) = link_tag[disp_value_start..].find('"') {
+                            link_tag[disp_value_start..disp_value_start + disp_end].to_string()
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    };
+                    
+                    if !ref_cell.is_empty() && !location.is_empty() {
+                        hyperlinks.push(HyperlinkInfo {
+                            ref_cell,
+                            location,
+                            display,
+                        });
+                    }
+                    
+                    pos = abs_link_start + link_end + 2;
+                } else {
+                    break;
+                }
+            }
+            
+            // 移除整个 hyperlinks 标签
+            result_xml = format!("{}{}", &result_xml[..start], &result_xml[start + hyperlinks_content.len()..]);
+        } else if let Some(end) = after_start.find("/>") {
+            // 自闭合标签: <hyperlinks ... /> (不常见，但处理一下)
+            let hyperlinks_content = &after_start[..end + "/>".len()];
+            result_xml = format!("{}{}", &result_xml[..start], &result_xml[start + hyperlinks_content.len()..]);
+        }
+    }
+    
+    Ok((result_xml, merge_refs, hyperlinks))
+}
+
+/// 在 sharedStrings 数组中注入 helper 调用
+/// 通过查找单元格的 sharedString 索引，然后在对应的 shared_strings[index] 前面插入 helper
+pub(crate) fn inject_helpers_into_shared_strings(
+    xml_content: &str,
+    shared_strings: &mut Vec<String>,
+    merge_refs: &[String],
+    hyperlinks: &[HyperlinkInfo],
+) -> Result<(), Box<dyn std::error::Error>> {
+    // 处理 mergeCells
+    for merge_ref in merge_refs {
+        if let Some(colon_pos) = merge_ref.find(':') {
+            let start_cell = &merge_ref[..colon_pos];
+            let end_cell = &merge_ref[colon_pos + 1..];
+            
+            // 解析结束单元格的列号和行号
+            let end_col = end_cell.chars().take_while(|c| c.is_alphabetic()).collect::<String>();
+            let end_row = end_cell.chars().skip_while(|c| c.is_alphabetic()).collect::<String>();
+            
+            // 查找起始单元格并获取其 sharedString 索引
+            let cell_pattern = format!("<c r=\"{}\"", start_cell);
+            if let Some(cell_start) = xml_content.find(&cell_pattern) {
+                let cell_section = &xml_content[cell_start..];
+                
+                // 查找 <v> 标签中的索引值
+                if let Some(v_start) = cell_section.find("<v>") {
+                    if let Some(v_end) = cell_section[v_start + 3..].find("</v>") {
+                        let index_str = &cell_section[v_start + 3..v_start + 3 + v_end];
+                        if let Ok(index) = index_str.parse::<usize>() {
+                            if index < shared_strings.len() {
+                                // 构造 helper 调用
+                                let helper_call = format!(
+                                    "{{{{mergeCell (concat (_cr) \":\" (_cr \"{}\" {}))}}}}",
+                                    end_col, end_row
+                                );
+                                
+                                // 在 sharedString 内容的 <t> 标签内部前面插入 helper
+                                let original = &shared_strings[index];
+                                if let Some(t_start) = original.find("<t>") {
+                                    let insert_pos = t_start + 3;
+                                    let mut modified = original.to_string();
+                                    modified.insert_str(insert_pos, &helper_call);
+                                    shared_strings[index] = modified;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 处理 hyperlinks
+    for link in hyperlinks {
+        // 查找单元格并获取其 sharedString 索引
+        let cell_pattern = format!("<c r=\"{}\"", link.ref_cell);
+        if let Some(cell_start) = xml_content.find(&cell_pattern) {
+            let cell_section = &xml_content[cell_start..];
+            
+            // 查找 <v> 标签中的索引值
+            if let Some(v_start) = cell_section.find("<v>") {
+                if let Some(v_end) = cell_section[v_start + 3..].find("</v>") {
+                    let index_str = &cell_section[v_start + 3..v_start + 3 + v_end];
+                    if let Ok(index) = index_str.parse::<usize>() {
+                        if index < shared_strings.len() {
+                            // 构造 helper 调用
+                            let helper_call = if link.display.is_empty() {
+                                format!("{{{{hyperlink (_cr) \"{}\" \"\"}}}}", link.location)
+                            } else {
+                                format!("{{{{hyperlink (_cr) \"{}\" \"{}\"}}}}", link.location, link.display)
+                            };
+                            
+                            // 在 sharedString 内容的 <t> 标签内部前面插入 helper
+                            let original = &shared_strings[index];
+                            if let Some(t_start) = original.find("<t>") {
+                                let insert_pos = t_start + 3;
+                                let mut modified = original.to_string();
+                                modified.insert_str(insert_pos, &helper_call);
+                                shared_strings[index] = modified;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(())
+}
 
 /**
  * 1. 合并所有的 handlebars, 因为 handlebars 语法内部的字体颜色啥的是没有意义的, 内部的xml标签没有意义合并成普通文本
@@ -265,7 +490,7 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
                           let value = std::str::from_utf8(&attr.value).unwrap_or("");
                           // 从 E7 中提取列字母部分
                           let r_char: String = value.chars().take_while(|c| c.is_alphabetic()).collect();
-                          current_col = excel_column_index(&r_char);
+                          current_col = to_column_index(&r_char);
                           break;
                         }
                       }
@@ -287,7 +512,7 @@ pub(crate) fn merge_handlebars_in_xml(xml_content: String) -> Result<String, Box
                           let value = std::str::from_utf8(&attr.value)?;
                           // 从 E7 中提取列字母部分
                           let r_char: String = value.chars().take_while(|c| c.is_alphabetic()).collect();
-                          let col_inline = excel_column_index(&r_char);
+                          let col_inline = to_column_index(&r_char);
                           // println!("{r_char} -> {col_inline}");
                           let value = format!("{{{{set_col_inline {col_inline}}}}}{{{{_cr}}}}");
                           new_start.push_attribute((key.as_bytes(), value.as_bytes()));
@@ -718,6 +943,14 @@ pub(crate) fn register_basic_helpers(handlebars: &mut handlebars::Handlebars) ->
     handlebars_helper!(lower: |s: String| s.to_lowercase());
     handlebars.register_helper("lower", Box::new(lower));
     
+    // 注册 add helper (加法)
+    handlebars_helper!(add: |x: i64, y: i64| x + y);
+    handlebars.register_helper("add", Box::new(add));
+    
+    // 注册 sub helper (减法)
+    handlebars_helper!(sub: |x: i64, y: i64| x - y);
+    handlebars.register_helper("sub", Box::new(sub));
+    
     // 注册 len helper (数组/字符串长度)
     handlebars_helper!(len: |x: Value| {
         match x {
@@ -735,7 +968,7 @@ pub(crate) fn register_basic_helpers(handlebars: &mut handlebars::Handlebars) ->
 /// 在 Excel 的 sheet.xml 中列名
 /// 传入当前列名和一个增量，返回新的列名
 /// 用于生成 Excel 列名，如 A, B, ..., Z, AA, AB, ..., ZZ, AAA, ...
-pub(crate) fn excel_column_name(current: &str, increment: u32) -> String {
+pub fn to_column_name(current: &str, increment: u32) -> String {
   let mut col_index = 0;
   for (i, ch) in current.chars().rev().enumerate() {
     let ch_val = (ch as u8 - b'A' + 1) as u32;
@@ -758,7 +991,7 @@ pub(crate) fn excel_column_name(current: &str, increment: u32) -> String {
 /// 在 Excel 的 sheet.xml 中列名
 /// 传入当前列名传入字母，返回对应的列索引 (1-based)
 /// 用于生成 Excel 列名，如 A, B, ..., Z, AA, AB, ..., ZZ, AAA, ...
-pub(crate) fn excel_column_index(col_name: &str) -> u32 {
+pub fn to_column_index(col_name: &str) -> u32 {
   let mut col_index = 0;
   for (i, ch) in col_name.chars().rev().enumerate() {
     let ch_val = (ch as u8 - b'A' + 1) as u32;
@@ -767,19 +1000,104 @@ pub(crate) fn excel_column_index(col_name: &str) -> u32 {
   col_index
 }
 
+/// 将时间戳（毫秒）转换为 Excel 日期序列号
+/// 
+/// Excel 使用从 1900年1月1日开始的序列号来表示日期。
+/// 由于 Excel 的历史 bug（将 1900 年视为闰年），需要特殊处理。
+/// 
+/// # 参数
+/// * `timestamp_ms` - Unix 时间戳（毫秒），从 1970-01-01 00:00:00 UTC 开始
+/// 
+/// # 返回
+/// Excel 日期序列号（浮点数）
+/// 
+/// # 示例
+/// ```rust
+/// use xlsx_handlebars::timestamp_to_excel_date;
+/// 
+/// // 2024-01-01 00:00:00 UTC
+/// let timestamp = 1704067200000i64;
+/// let excel_date = timestamp_to_excel_date(timestamp);
+/// println!("Excel date number: {}", excel_date);
+/// ```
+pub fn timestamp_to_excel_date(timestamp_ms: i64) -> f64 {
+    // Excel 的基准日期是 1900-01-01，但实际上从 1899-12-30 开始计数
+    // 25569 是从 1900-01-01 到 1970-01-01 的天数
+    const EXCEL_EPOCH_OFFSET: i64 = 25569;
+    const MS_PER_DAY: i64 = 86400000;
+    
+    let mut val_tmp = timestamp_ms + EXCEL_EPOCH_OFFSET * MS_PER_DAY;
+    
+    // Excel 错误地将 1900 年视为闰年，需要调整
+    // 60 代表 1900-02-29（不存在的日期）
+    if val_tmp <= 60 * MS_PER_DAY {
+        val_tmp += MS_PER_DAY;
+    } else {
+        val_tmp += 2 * MS_PER_DAY;
+    }
+    
+    val_tmp as f64 / MS_PER_DAY as f64
+}
+
+/// 将 Excel 日期序列号转换为 Unix 时间戳（毫秒）
+/// 
+/// Excel 使用从 1900年1月1日开始的序列号来表示日期。
+/// 此函数将 Excel 序列号转换回 Unix 时间戳。
+/// 
+/// # 参数
+/// * `excel_date` - Excel 日期序列号
+/// 
+/// # 返回
+/// * `Some(timestamp_ms)` - Unix 时间戳（毫秒），从 1970-01-01 00:00:00 UTC 开始
+/// * `None` - 如果输入的序列号无效（如负数或等于60）
+/// 
+/// # 示例
+/// ```rust
+/// use xlsx_handlebars::excel_date_to_timestamp;
+/// 
+/// // Excel 序列号 45294.0 表示 2024-01-01
+/// let excel_date = 45294.0;
+/// if let Some(timestamp) = excel_date_to_timestamp(excel_date) {
+///     println!("Unix timestamp: {}", timestamp);
+/// }
+/// ```
+pub fn excel_date_to_timestamp(excel_date: f64) -> Option<i64> {
+    const MS_PER_DAY: i64 = 86400000;
+    const EXCEL_EPOCH_OFFSET: i64 = 25569;
+    
+    let mut val = excel_date;
+    
+    // 处理 Excel 的 1900 年闰年 bug（反向操作）
+    if val < 60.0 {
+        val -= 1.0;
+    } else if val > 60.0 {
+        val -= 2.0;
+    }
+    
+    // 60 代表不存在的日期 1900-02-29
+    if val < 0.0 || excel_date == 60.0 {
+        return None;
+    }
+    
+    // 转换为时间戳
+    let timestamp = (val * MS_PER_DAY as f64).round() as i64 - (EXCEL_EPOCH_OFFSET * MS_PER_DAY);
+    
+    Some(timestamp)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
   
   #[test]
   fn test_excel_column_name() {
-    assert_eq!(excel_column_name("A", 0), "A");
-    assert_eq!(excel_column_name("A", 1), "B");
-    assert_eq!(excel_column_name("Z", 1), "AA");
-    assert_eq!(excel_column_name("AA", 1), "AB");
-    assert_eq!(excel_column_name("AZ", 1), "BA");
-    assert_eq!(excel_column_name("ZZ", 1), "AAA");
-    assert_eq!(excel_column_name("AAA", 26), "ABA");
+    assert_eq!(to_column_name("A", 0), "A");
+    assert_eq!(to_column_name("A", 1), "B");
+    assert_eq!(to_column_name("Z", 1), "AA");
+    assert_eq!(to_column_name("AA", 1), "AB");
+    assert_eq!(to_column_name("AZ", 1), "BA");
+    assert_eq!(to_column_name("ZZ", 1), "AAA");
+    assert_eq!(to_column_name("AAA", 26), "ABA");
   }
   
   #[test]
@@ -856,14 +1174,14 @@ mod tests {
   
   #[test]
   fn test_excel_column_index() {
-    assert_eq!(excel_column_index("A"), 1);
-    assert_eq!(excel_column_index("E"), 5);
-    assert_eq!(excel_column_index("Z"), 26);
-    assert_eq!(excel_column_index("AA"), 27);
-    assert_eq!(excel_column_index("AZ"), 52);
-    assert_eq!(excel_column_index("BA"), 53);
-    assert_eq!(excel_column_index("ZZ"), 702);
-    assert_eq!(excel_column_index("AAA"), 703);
+    assert_eq!(to_column_index("A"), 1);
+    assert_eq!(to_column_index("E"), 5);
+    assert_eq!(to_column_index("Z"), 26);
+    assert_eq!(to_column_index("AA"), 27);
+    assert_eq!(to_column_index("AZ"), 52);
+    assert_eq!(to_column_index("BA"), 53);
+    assert_eq!(to_column_index("ZZ"), 702);
+    assert_eq!(to_column_index("AAA"), 703);
   }
   
   #[test]
@@ -882,17 +1200,132 @@ mod tests {
     ];
     
     for (col_name, expected_index) in test_cases {
-      let index = excel_column_index(col_name);
+      let index = to_column_index(col_name);
       assert_eq!(index, expected_index, "Column name to index failed for {}", col_name);
       
-      let name = excel_column_name(col_name, 0);
+      let name = to_column_name(col_name, 0);
       assert_eq!(name, col_name, "Column name identity failed for {}", col_name);
       
-      let name_plus_one = excel_column_name(col_name, 1);
-      let index_plus_one = excel_column_index(&name_plus_one);
+      let name_plus_one = to_column_name(col_name, 1);
+      let index_plus_one = to_column_index(&name_plus_one);
       assert_eq!(index_plus_one, expected_index + 1, "Column name to index failed for {} + 1", col_name);
     }
   }
+  
+  #[test]
+  fn test_excel_date_conversion() {
+    // 测试 2024-01-01 00:00:00 UTC
+    // Unix timestamp: 1704067200000 ms
+    let timestamp_2024 = 1704067200000i64;
+    let excel_date = timestamp_to_excel_date(timestamp_2024);
+    
+    // Excel 中 2024-01-01 的序列号应该是 45294 (包含 Excel 1900 bug 调整)
+    assert!((excel_date - 45294.0).abs() < 0.001, "Excel date for 2024-01-01 should be ~45294, got {}", excel_date);
+    
+    // 反向转换
+    if let Some(timestamp) = excel_date_to_timestamp(excel_date) {
+      // 允许一些精度损失（毫秒级别）
+      assert!((timestamp - timestamp_2024).abs() < 1000, "Timestamp mismatch: expected {}, got {}", timestamp_2024, timestamp);
+    } else {
+      panic!("Failed to convert Excel date back to timestamp");
+    }
+    
+    // 测试 1970-01-01 00:00:00 UTC (Unix epoch)
+    let timestamp_1970 = 0i64;
+    let excel_date_1970 = timestamp_to_excel_date(timestamp_1970);
+    
+    // Excel 中 1970-01-01 的序列号应该是 25571 (25569 + 2 for bug)
+    assert!((excel_date_1970 - 25571.0).abs() < 0.001, "Excel date for 1970-01-01 should be ~25571, got {}", excel_date_1970);
+    
+    // 测试边界情况：1900-02-28 (序列号 59)
+    let excel_date_59 = 59.0;
+    assert!(excel_date_to_timestamp(excel_date_59).is_some());
+    
+    // 测试无效日期：1900-02-29 (序列号 60，不存在的日期)
+    let excel_date_60 = 60.0;
+    assert!(excel_date_to_timestamp(excel_date_60).is_none(), "Excel date 60 (1900-02-29) should be invalid");
+    
+    // 测试负数（无效）
+    assert!(excel_date_to_timestamp(-1.0).is_none(), "Negative Excel date should be invalid");
+  }
+  
+  #[test]
+  fn test_extract_and_remove_merge_cells_and_hyperlinks() {
+    // 测试包含完整 mergeCells 标签的情况
+    let input_with_merge = r#"<?xml version="1.0"?>
+<worksheet>
+  <sheetData>
+    <row r="1">
+      <c r="A1"><v>Test</v></c>
+    </row>
+  </sheetData>
+  <mergeCells count="2">
+    <mergeCell ref="A1:B1"/>
+    <mergeCell ref="C2:D3"/>
+  </mergeCells>
+  <pageMargins left="0.7" right="0.7"/>
+</worksheet>"#;
+    
+    let (result_xml, merge_refs, hyperlinks) = extract_and_remove_merge_cells_and_hyperlinks(input_with_merge).unwrap();
+    
+    // 验证合并范围被正确提取
+    assert_eq!(merge_refs.len(), 2);
+    assert_eq!(merge_refs[0], "A1:B1");
+    assert_eq!(merge_refs[1], "C2:D3");
+    assert_eq!(hyperlinks.len(), 0);
+    
+    // 验证 mergeCells 标签被移除
+    assert!(!result_xml.contains("<mergeCells"));
+    assert!(!result_xml.contains("</mergeCells>"));
+    assert!(!result_xml.contains("mergeCell"));
+    
+    // 验证其他内容保持不变
+    assert!(result_xml.contains("<sheetData>"));
+    assert!(result_xml.contains("<pageMargins"));
+    
+    // 测试包含 hyperlinks 的情况
+    let input_with_hyperlinks = r#"<?xml version="1.0"?>
+<worksheet>
+  <sheetData>
+    <row r="1">
+      <c r="A1"><v>Link</v></c>
+    </row>
+  </sheetData>
+  <hyperlinks>
+    <hyperlink ref="A1" location="Sheet2!A1" display="Go to Sheet2"/>
+    <hyperlink ref="B2" location="https://example.com" display="Example"/>
+  </hyperlinks>
+</worksheet>"#;
+    
+    let (result_xml2, merge_refs2, hyperlinks2) = extract_and_remove_merge_cells_and_hyperlinks(input_with_hyperlinks).unwrap();
+    assert_eq!(merge_refs2.len(), 0);
+    assert_eq!(hyperlinks2.len(), 2);
+    assert_eq!(hyperlinks2[0].ref_cell, "A1");
+    assert_eq!(hyperlinks2[0].location, "Sheet2!A1");
+    assert_eq!(hyperlinks2[0].display, "Go to Sheet2");
+    assert_eq!(hyperlinks2[1].ref_cell, "B2");
+    assert_eq!(hyperlinks2[1].location, "https://example.com");
+    assert!(!result_xml2.contains("<hyperlinks"));
+    
+    // 测试同时包含 mergeCells 和 hyperlinks 的情况
+    let input_both = r#"<?xml version="1.0"?>
+<worksheet>
+  <sheetData/>
+  <mergeCells count="1">
+    <mergeCell ref="A1:B2"/>
+  </mergeCells>
+  <hyperlinks>
+    <hyperlink ref="C3" location="Sheet1!A1" display="Link"/>
+  </hyperlinks>
+</worksheet>"#;
+    
+    let (result_xml3, merge_refs3, hyperlinks3) = extract_and_remove_merge_cells_and_hyperlinks(input_both).unwrap();
+    assert_eq!(merge_refs3.len(), 1);
+    assert_eq!(hyperlinks3.len(), 1);
+    assert!(!result_xml3.contains("mergeCells"));
+    assert!(!result_xml3.contains("hyperlinks"));
+  }
+
   
 }
 
@@ -914,6 +1347,7 @@ pub(crate) fn post_process_xml(
     to_number_key: Option<&str>,
     to_formula_key: Option<&str>,
     merge_cells: Option<&[String]>,
+    hyperlinks: Option<&[HyperlinkInfo]>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut reader = Reader::from_str(xml_content);
     let mut writer = Writer::new(Cursor::new(Vec::new()));
@@ -922,6 +1356,7 @@ pub(crate) fn post_process_xml(
     let mut current_row_content = String::new();
     let mut in_row = false;
     let mut row_depth = 0;
+    let mut hyperlinks_inserted = false; // 标记是否已插入 hyperlinks
     
     loop {
         match reader.read_event_into(&mut buf) {
@@ -948,6 +1383,47 @@ pub(crate) fn post_process_xml(
                     }
                     current_row_content.push('>');
                 } else {
+                    // 检查是否是 pageMargins 开始标签，如果是则先插入 hyperlinks
+                    if e.name().as_ref() == b"pageMargins" && !hyperlinks_inserted {
+                        hyperlinks_inserted = true;
+                        
+                        // 先插入 hyperlinks（如果有）
+                        if let Some(links) = hyperlinks {
+                            if !links.is_empty() {
+                                use uuid::Uuid;
+                                
+                                // 生成 hyperlinks XML
+                                let hyperlinks_xml = links.iter()
+                                    .map(|link| {
+                                        let uuid = Uuid::new_v4();
+                                        let uuid_str = format!("{{{}}}", uuid.to_string().to_uppercase());
+                                        
+                                        // 构造超链接标签
+                                        if link.display.is_empty() {
+                                            format!(
+                                                "<hyperlink ref=\"{}\" location=\"{}\" xr:uid=\"{}\"/>",
+                                                link.ref_cell, link.location, uuid_str
+                                            )
+                                        } else {
+                                            format!(
+                                                "<hyperlink ref=\"{}\" location=\"{}\" display=\"{}\" xr:uid=\"{}\"/>",
+                                                link.ref_cell, link.location, link.display, uuid_str
+                                            )
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("");
+                                
+                                // 写入 hyperlinks（带命名空间属性）
+                                let hyperlinks_tag = format!(
+                                    "<hyperlinks xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:xr=\"http://schemas.microsoft.com/office/spreadsheetml/2014/revision\">{}</hyperlinks>",
+                                    hyperlinks_xml
+                                );
+                                writer.get_mut().write_all(hyperlinks_tag.as_bytes())?;
+                            }
+                        }
+                    }
+                    
                     writer.write_event(Event::Start(e.clone()))?;
                 }
             }
@@ -1040,6 +1516,47 @@ pub(crate) fn post_process_xml(
                     }
                     current_row_content.push_str("/>");
                 } else {
+                    // 检查是否是 pageMargins 自闭合标签，如果是则先插入 hyperlinks
+                    if e.name().as_ref() == b"pageMargins" && !hyperlinks_inserted {
+                        hyperlinks_inserted = true;
+                        
+                        // 先插入 hyperlinks（如果有）
+                        if let Some(links) = hyperlinks {
+                            if !links.is_empty() {
+                                use uuid::Uuid;
+                                
+                                // 生成 hyperlinks XML
+                                let hyperlinks_xml = links.iter()
+                                    .map(|link| {
+                                        let uuid = Uuid::new_v4();
+                                        let uuid_str = format!("{{{}}}", uuid.to_string().to_uppercase());
+                                        
+                                        // 构造超链接标签
+                                        if link.display.is_empty() {
+                                            format!(
+                                                "<hyperlink ref=\"{}\" location=\"{}\" xr:uid=\"{}\"/>",
+                                                link.ref_cell, link.location, uuid_str
+                                            )
+                                        } else {
+                                            format!(
+                                                "<hyperlink ref=\"{}\" location=\"{}\" display=\"{}\" xr:uid=\"{}\"/>",
+                                                link.ref_cell, link.location, link.display, uuid_str
+                                            )
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("");
+                                
+                                // 写入 hyperlinks（带命名空间属性）
+                                let hyperlinks_tag = format!(
+                                    "<hyperlinks xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:xr=\"http://schemas.microsoft.com/office/spreadsheetml/2014/revision\">{}</hyperlinks>",
+                                    hyperlinks_xml
+                                );
+                                writer.get_mut().write_all(hyperlinks_tag.as_bytes())?;
+                            }
+                        }
+                    }
+                    
                     writer.write_event(Event::Empty(e.clone()))?;
                 }
             }

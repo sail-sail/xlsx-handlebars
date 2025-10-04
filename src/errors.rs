@@ -5,7 +5,7 @@ use thiserror::Error;
 /// XLSX 处理错误类型
 #[derive(Error, Debug)]
 pub enum XlsxError {
-    #[error("无效的 XLSX 文件格式")]
+    #[error("Invalid Zip Format")]
     InvalidZipFormat,
     #[error("{0}")]
     TemplateRenderError(String),

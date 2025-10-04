@@ -146,10 +146,58 @@ fn get_gif_dimensions(data: &[u8]) -> Option<(u32, u32)> {
     Some((width, height))
 }
 
-// 获取图片的宽高
-/// 支持 PNG, JPEG, WebP, BMP, TIFF, GIF 格式
-#[allow(dead_code)]
-pub(crate) fn get_image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+/// Get image dimensions (width, height) from raw image data.
+///
+/// Supports the following formats:
+/// - PNG
+/// - JPEG
+/// - WebP (VP8, VP8L, VP8X)
+/// - BMP
+/// - TIFF (II/MM byte order)
+/// - GIF (87a/89a)
+///
+/// # Arguments
+/// * `data` - Raw image data as bytes
+///
+/// # Returns
+/// * `Some((width, height))` - Image dimensions in pixels if format is supported
+/// * `None` - If the format is unsupported or data is invalid
+///
+/// # Examples
+///
+/// ```rust
+/// use xlsx_handlebars::get_image_dimensions;
+///
+/// // Read image file
+/// let image_data = std::fs::read("logo.png").unwrap();
+///
+/// // Get dimensions
+/// if let Some((width, height)) = get_image_dimensions(&image_data) {
+///     println!("Image size: {}x{}", width, height);
+/// } else {
+///     println!("Unsupported image format");
+/// }
+/// ```
+///
+/// ```rust
+/// use xlsx_handlebars::get_image_dimensions;
+///
+/// // Validate image size before using in template
+/// let image_data = std::fs::read("photo.jpg").unwrap();
+/// match get_image_dimensions(&image_data) {
+///     Some((w, h)) if w <= 1000 && h <= 1000 => {
+///         // Image size is acceptable
+///         println!("Valid image: {}x{}", w, h);
+///     }
+///     Some((w, h)) => {
+///         eprintln!("Image too large: {}x{} (max 1000x1000)", w, h);
+///     }
+///     None => {
+///         eprintln!("Unsupported image format");
+///     }
+/// }
+/// ```
+pub fn get_image_dimensions(data: &[u8]) -> Option<(u32, u32)> {
     if let Some((w, h)) = get_png_dimensions(data) {
         Some((w, h))
     } else if let Some((w, h)) = get_jpeg_dimensions(data).map(|(w, h)| (w as u32, h as u32)) {

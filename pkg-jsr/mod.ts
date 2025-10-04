@@ -17,10 +17,10 @@
  */
 
 // Import the WASM module and its functions
-import init, { render } from "./xlsx_handlebars.js";
+import init, { render_template } from "./xlsx_handlebars.js";
 
 // Re-export the main functions
-export { render, init };
+export { render_template, init };
 export default init;
 
 /**

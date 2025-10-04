@@ -1,5 +1,5 @@
 // Comprehensive test for JSR package with actual file processing
-import { render, init } from "xlsx-handlebars";
+import { default as init, render_template } from "xlsx-handlebars";
 
 async function comprehensiveTest() {
   try {
@@ -16,6 +16,16 @@ async function comprehensiveTest() {
       const templatePath = "../../examples/template.xlsx";
       const templateBytes = await Deno.readFile(templatePath);
       console.log('✓ Template file loaded:', templateBytes.length, 'bytes');
+      
+      let imageBase64 = '';
+      try {
+          const imgPath = "../../examples/image.png";
+          const imageBytes = await Deno.readFile(imgPath);
+          imageBase64 = btoa(Array.from(imageBytes, byte => String.fromCharCode(byte)).join(''));
+          console.log('✓ Image file loaded, size:', imageBase64.length, 'bytes');
+      } catch (_imgErr) {
+          console.log('⚠️  Image file not found, proceeding without image');
+      }
       
       // Render with test data
       const testData = {
@@ -73,10 +83,13 @@ async function comprehensiveTest() {
                 report_date: new Date().toLocaleDateString("zh-CN"),
                 quarter: "2024 Q1",
                 version: "v1.0"
-            }
+            },
+            image: {
+                "base64": imageBase64, // 图片的 Base64 编码
+            },
         };
       
-      const result = render(templateBytes, JSON.stringify(testData));
+      const result = render_template(templateBytes, JSON.stringify(testData));
       console.log('✓ Template rendered successfully, result size:', result.length, 'bytes');
       
       // Save output

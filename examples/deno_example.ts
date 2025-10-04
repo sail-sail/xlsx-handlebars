@@ -7,9 +7,8 @@
 // 注意：这需要先构建 WASM 包
 // 运行 `npm run build:jsr` 来构建包
 
-import {
-    render,
-    default as init,
+import init, {
+    render_template,
 } from "../pkg-jsr/mod.ts";
 
 import * as fs from "node:fs";
@@ -107,14 +106,14 @@ async function denoExample() {
                 quarter: "2024 Q1",
                 version: "v1.0"
             },
-            "image": {
+            image: {
                 "base64": imageBase64, // 图片的 Base64 编码
             },
         };
         
         // 渲染模板 - 使用新的函数式 API
         console.log("\n🎨 渲染模板...");
-        const result = render(templateBytes, JSON.stringify(data));
+        const result = render_template(templateBytes, JSON.stringify(data));
         
         // 保存结果
         const outputPath = "./examples/output_deno.xlsx";

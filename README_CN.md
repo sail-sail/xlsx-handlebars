@@ -43,7 +43,7 @@ npm install xlsx-handlebars
 ### Deno
 
 ```typescript
-import { render, init } from "jsr:@sail/xlsx-handlebars";
+import { render_template, init } from "jsr:@sail/xlsx-handlebars";
 ```
 
 ## 使用示例
@@ -51,7 +51,7 @@ import { render, init } from "jsr:@sail/xlsx-handlebars";
 ### Rust
 
 ```rust
-use xlsx_handlebars::render_handlebars;
+use xlsx_handlebars::render_template;
 use serde_json::json;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     
     // 渲染模板
-    let result = render_handlebars(template_bytes, &data)?;
+    let result = render_template(template_bytes, &data)?;
     
     // 保存结果
     std::fs::write("output.xlsx", result)?;
@@ -84,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### JavaScript/TypeScript (Node.js)
 
 ```javascript
-import { render, init } from 'xlsx-handlebars';
+import init, { render_template } from "xlsx-handlebars";
 import fs from 'fs';
 
 async function processTemplate() {
@@ -92,7 +92,7 @@ async function processTemplate() {
     await init();
     
     // 读取模板文件
-    const templateBytes = fs.readFileSync('template.xlsx');
+    const templateBytes = fs.readFileSync("template.xlsx");
     
     // 准备数据
     const data = {
@@ -108,7 +108,7 @@ async function processTemplate() {
     };
     
     // 渲染模板
-    const result = render(templateBytes, JSON.stringify(data));
+    const result = render_template(templateBytes, JSON.stringify(data));
     
     // 保存结果
     fs.writeFileSync('output.xlsx', new Uint8Array(result));
@@ -120,7 +120,7 @@ processTemplate().catch(console.error);
 ### Deno
 
 ```typescript
-import { render, init } from "https://deno.land/x/xlsx_handlebars/mod.ts";
+import init, { render_template } from "https://deno.land/x/xlsx_handlebars/mod.ts";
 
 async function processTemplate() {
     // 初始化 WASM 模块
@@ -140,7 +140,7 @@ async function processTemplate() {
     };
     
     // 渲染模板
-    const result = render(templateBytes, JSON.stringify(data));
+    const result = render_template(templateBytes, JSON.stringify(data));
     
     // 保存结果
     await Deno.writeFile("output.xlsx", new Uint8Array(result));
@@ -164,7 +164,7 @@ if (import.meta.main) {
     <button onclick="processFile()">处理模板</button>
     
     <script type="module">
-        import { render, init } from './pkg/xlsx_handlebars.js';
+        import init, { render_template } from './pkg/xlsx_handlebars.js';
         
         // 初始化 WASM
         await init();
@@ -184,7 +184,7 @@ if (import.meta.main) {
             };
             
             try {
-                const result = render(templateBytes, JSON.stringify(data));
+                const result = render_template(templateBytes, JSON.stringify(data));
                 
                 // 下载结果
                 const blob = new Blob([new Uint8Array(result)], {
@@ -356,6 +356,34 @@ if (import.meta.main) {
 - 相同的合并范围会自动去重
 - 合并信息会在渲染完成后自动添加到 Excel 文件中
 
+#### 超链接 Helper
+
+**`hyperlink`** - 在 Excel 单元格中添加超链接：
+
+```handlebars
+<!-- 基础用法：链接到其他工作表 -->
+{{hyperlink (_cr) "Sheet2!A1" "查看详情"}}
+
+<!-- 链接到外部网址（需在模板中预设） -->
+{{hyperlink (_cr) "https://example.com" "访问网站"}}
+
+<!-- 动态链接 -->
+{{#each items}}
+  {{hyperlink (_cr) (concat "详情!" name) name}}
+{{/each}}
+```
+
+**参数说明**：
+- 第一个参数：单元格引用，通常使用 `(_cr)` 获取当前单元格
+- 第二个参数：链接目标（工作表引用或 URL）
+- 第三个参数：显示文本（可选）
+
+**注意事项**：
+- `hyperlink` 不产生输出，仅收集超链接信息
+- 超链接会在渲染完成后自动添加到 Excel 文件中
+- 支持工作表内部引用（如 `"Sheet2!A1"`）
+- 外部链接需要在模板 Excel 文件中预先配置关系
+
 #### 数字类型 Helper
 
 使用 `{{num value}}` 确保单元格在 Excel 中被识别为数字：
@@ -449,6 +477,105 @@ const data = {
 - 图片会放置在调用 `{{img}}` 的单元格位置
 - base64 数据不包含 `data:image/png;base64,` 前缀，只需要纯 base64 字符串
 
+#### 工作表管理 Helpers
+
+**`deleteCurrentSheet`** - 删除当前正在渲染的工作表：
+
+```handlebars
+<!-- 基础用法 -->
+{{deleteCurrentSheet}}
+
+<!-- 条件删除 -->
+{{#if shouldDelete}}
+  {{deleteCurrentSheet}}
+{{/if}}
+
+<!-- 删除非活跃工作表 -->
+{{#unless isActive}}
+  {{deleteCurrentSheet}}
+{{/unless}}
+```
+
+**特性**：
+- ✅ 从工作簿中移除工作表及其关系
+- ✅ 清理相关文件（rels、content types）
+- ✅ 保留 drawing 文件（安全考虑）
+- ✅ 不能删除最后一个工作表（Excel 要求）
+- ✅ 延迟执行，所有渲染完成后统一删除
+
+**`setCurrentSheetName`** - 重命名当前工作表：
+
+```handlebars
+<!-- 静态名称 -->
+{{setCurrentSheetName "销售报表"}}
+
+<!-- 动态名称 -->
+{{setCurrentSheetName (concat department.name " - " year "年")}}
+
+<!-- 基于循环的命名 -->
+{{#each departments}}
+  {{setCurrentSheetName (concat "部门" @index " - " name)}}
+{{/each}}
+```
+
+**特性**：
+- ✅ 自动过滤非法字符：`\ / ? * [ ]`
+- ✅ 自动限制长度为 31 个字符
+- ✅ 自动处理重名，添加数字后缀
+- ✅ 支持动态名称生成
+
+**`hideCurrentSheet`** - 隐藏当前工作表：
+
+```handlebars
+<!-- 普通隐藏（用户可通过右键取消隐藏） -->
+{{hideCurrentSheet}}
+{{hideCurrentSheet "hidden"}}
+
+<!-- 超级隐藏（需要 VBA 才能取消隐藏） -->
+{{hideCurrentSheet "veryHidden"}}
+
+<!-- 条件隐藏 -->
+{{#unless (eq userRole "admin")}}
+  {{hideCurrentSheet "veryHidden"}}
+{{/unless}}
+```
+
+**隐藏级别**：
+- `hidden` - 普通隐藏，用户可通过 Excel 右键菜单取消隐藏
+- `veryHidden` - 超级隐藏，需要 VBA 或属性编辑器才能取消隐藏
+
+**特性**：
+- ✅ 不能隐藏所有工作表（Excel 要求至少一个可见）
+- ✅ 两种隐藏级别：普通隐藏和超级隐藏
+- ✅ 适用于权限控制和敏感数据保护
+
+**常见使用场景**：
+
+```handlebars
+<!-- 多语言报表：删除未使用的语言工作表 -->
+{{#if (ne language "zh-CN")}}
+  {{deleteCurrentSheet}}
+{{/if}}
+
+<!-- 动态部门报表：按部门重命名工作表 -->
+{{setCurrentSheetName (concat department.name " 报表")}}
+
+<!-- 权限控制：对普通用户隐藏管理员工作表 -->
+{{#unless (eq userRole "admin")}}
+  {{hideCurrentSheet "veryHidden"}}
+{{/unless}}
+
+<!-- 条件工作流：根据状态删除、重命名或隐藏 -->
+{{#if (eq status "inactive")}}
+  {{deleteCurrentSheet}}
+{{else}}
+  {{setCurrentSheetName (concat "活跃 - " name)}}
+  {{#if isInternal}}
+    {{hideCurrentSheet}}
+  {{/if}}
+{{/if}}
+```
+
 ### 复杂示例
 
 ```handlebars
@@ -491,42 +618,6 @@ const data = {
 {{/if}}
 ```
 
-## 错误处理
-
-库提供了详细的错误类型和消息：
-
-### Rust
-
-```rust
-use xlsx_handlebars::{render_handlebars, XlsxError};
-
-match render_handlebars(template_bytes, &data) {
-    Ok(result) => {
-        println!("处理成功！");
-        std::fs::write("output.xlsx", result)?;
-    }
-    Err(e) => match e.downcast_ref::<XlsxError>() {
-        Some(XlsxError::InvalidZipFormat) => {
-            eprintln!("错误: 无效的 XLSX 文件格式");
-        }
-        _ => {
-            eprintln!("其他错误: {}", e);
-        }
-    }
-}
-```
-
-### JavaScript/TypeScript
-
-```javascript
-try {
-    const result = render(templateBytes, JSON.stringify(data));
-    console.log('处理成功！');
-} catch (error) {
-    console.error('处理失败:', error);
-}
-```
-
 ## 构建和开发
 
 ### 构建 WASM 包
@@ -560,11 +651,174 @@ node serve.js
 # 选择 examples/template.xlsx 文件测试
 ```
 
+## 工具函数
+
+xlsx-handlebars 提供了一系列实用工具函数，帮助你更高效地处理 Excel 相关操作。
+
+### 获取图片尺寸
+
+从原始图片数据中检测图片尺寸，无需依赖完整的图片处理库。
+
+```rust
+use xlsx_handlebars::get_image_dimensions;
+
+// 读取图片文件
+let image_data = std::fs::read("logo.png")?;
+
+// 获取尺寸
+if let Some((width, height)) = get_image_dimensions(&image_data) {
+    println!("图片尺寸: {}x{}", width, height);
+} else {
+    println!("不支持的图片格式");
+}
+```
+
+**支持的格式**：
+- PNG
+- JPEG
+- WebP (VP8, VP8L, VP8X)
+- BMP
+- TIFF (II/MM 字节序)
+- GIF (87a/89a)
+
+### Excel 列名转换
+
+在 Excel 中进行列名和列索引之间的转换。
+
+```rust
+use xlsx_handlebars::{to_column_name, to_column_index};
+
+// 列名递增
+assert_eq!(to_column_name("A", 0), "A");
+assert_eq!(to_column_name("A", 1), "B");
+assert_eq!(to_column_name("Z", 1), "AA");
+assert_eq!(to_column_name("AA", 1), "AB");
+
+// 列名转索引 (1-based)
+assert_eq!(to_column_index("A"), 1);
+assert_eq!(to_column_index("Z"), 26);
+assert_eq!(to_column_index("AA"), 27);
+assert_eq!(to_column_index("BA"), 53);
+```
+
+**JavaScript/TypeScript 示例**：
+
+```javascript
+import { wasm_to_column_name, wasm_to_column_index } from 'xlsx-handlebars';
+
+// 列名递增
+console.log(wasm_to_column_name("A", 1));  // "B"
+console.log(wasm_to_column_name("Z", 1));  // "AA"
+
+// 列名转索引
+console.log(wasm_to_column_index("AA"));   // 27
+console.log(wasm_to_column_index("BA"));   // 53
+```
+
+### Excel 日期转换
+
+在 Unix 时间戳和 Excel 日期序列号之间转换。Excel 使用从 1900-01-01 开始的序列号表示日期。
+
+```rust
+use xlsx_handlebars::{timestamp_to_excel_date, excel_date_to_timestamp};
+
+// 时间戳转 Excel 日期
+let timestamp = 1704067200000i64;  // 2024-01-01 00:00:00 UTC
+let excel_date = timestamp_to_excel_date(timestamp);
+println!("Excel 日期序列号: {}", excel_date);  // 45294.0
+
+// Excel 日期转时间戳
+if let Some(ts) = excel_date_to_timestamp(45294.0) {
+    println!("时间戳: {}", ts);  // 1704067200000
+}
+```
+
+**JavaScript/TypeScript 示例**：
+
+```javascript
+import { 
+    wasm_timestamp_to_excel_date, 
+    wasm_excel_date_to_timestamp 
+} from 'xlsx-handlebars';
+
+// 日期转 Excel 序列号
+const date = new Date('2024-01-01T00:00:00Z');
+const excelDate = wasm_timestamp_to_excel_date(date.getTime());
+console.log('Excel 日期:', excelDate);  // 45294.0
+
+// Excel 序列号转日期
+const timestamp = wasm_excel_date_to_timestamp(45294.0);
+if (timestamp !== null) {
+    const convertedDate = new Date(timestamp);
+    console.log('日期:', convertedDate.toISOString());
+}
+```
+
+**常见使用场景**：
+
+```rust
+// 在模板中使用前验证图片尺寸
+let image_data = std::fs::read("photo.jpg")?;
+match get_image_dimensions(&image_data) {
+    Some((w, h)) if w <= 1000 && h <= 1000 => {
+        println!("有效图片: {}x{}", w, h);
+        // 继续进行模板渲染
+    }
+    Some((w, h)) => {
+        eprintln!("图片过大: {}x{} (最大 1000x1000)", w, h);
+    }
+    None => {
+        eprintln!("不支持的图片格式");
+    }
+}
+```
+
+```rust
+// 动态生成单元格引用
+let start_col = "B";
+let num_cols = 5;
+for i in 0..num_cols {
+    let col_name = to_column_name(start_col, i);
+    let col_index = to_column_index(&col_name);
+    println!("列 {}: 名称={}, 索引={}", i, col_name, col_index);
+}
+```
+
+```rust
+// 在模板数据中包含日期
+use serde_json::json;
+
+let date_timestamp = 1704067200000i64;  // 2024-01-01
+let excel_date = timestamp_to_excel_date(date_timestamp);
+
+let data = json!({
+    "report_date": excel_date,
+    "employee": {
+        "name": "张三",
+        "hire_date": timestamp_to_excel_date(1609459200000i64)  // 2021-01-01
+    }
+});
+```
+
+```rust
+// 批量处理图片
+for file in &["logo.png", "banner.jpg", "icon.gif"] {
+    let data = std::fs::read(file)?;
+    match get_image_dimensions(&data) {
+        Some((w, h)) => println!("{}: {}x{}", file, w, h),
+        None => eprintln!("{}: 不支持的格式", file),
+    }
+}
+```
+
+这些工具函数帮助你：
+- ✅ 在插入前验证图片尺寸
+- ✅ 动态生成单元格引用和公式
+- ✅ 处理 Excel 日期格式
+- ✅ 避免加载笨重的外部库
+- ✅ 同时支持 Rust 和 JavaScript/TypeScript
+
 ## 技术特性
-
-### 智能合并算法
-
-该库的核心创新是智能合并被 XML 标签分割的 Handlebars 语法。在 XLSX 文件中，当用户输入模板语法时，Word 可能会将其拆分成多个 XML 标签
 
 ## 性能和兼容性
 

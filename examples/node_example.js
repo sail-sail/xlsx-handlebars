@@ -1,7 +1,7 @@
 // Node.js example for xlsx-handlebars
+// node examples/node_example.js
 const fs = require("node:fs");
 const path = require("node:path");
-const { fileURLToPath } = require("node:url");
 
 // 注意：这个示例需要 WASM 包构建完成后才能运行
 // 运行 `npm run build:npm` 来构建 npm 包
@@ -9,7 +9,7 @@ const { fileURLToPath } = require("node:url");
 async function nodeExample() {
     try {
         // 导入 WASM 模块 - 使用新的函数式 API
-        const { default: init, render } = await import('../pkg-npm/xlsx_handlebars.js');
+        const { default: init, render_template } = await import('../pkg-npm/xlsx_handlebars.js');
         
         // 指定 WASM 文件路径
         const wasmPath = path.join(__dirname, '../pkg-npm/xlsx_handlebars_bg.wasm');
@@ -99,7 +99,7 @@ async function nodeExample() {
         
         // 渲染模板 - 使用新的函数式 API
         console.log('\n🎨 渲染模板...');
-        const result = render(new Uint8Array(templateBuffer), JSON.stringify(data));
+        const result = render_template(new Uint8Array(templateBuffer), JSON.stringify(data));
         
         // 保存结果
         const outputPath = path.join(__dirname, 'output_node.xlsx');

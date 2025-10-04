@@ -1,5 +1,5 @@
 // Extended test script to verify npm package functionality using ES modules
-import init, { render } from 'xlsx-handlebars';
+import init, { render_template } from 'xlsx-handlebars';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -17,7 +17,7 @@ async function testDocumentProcessing() {
     await init(wasmBytes);
     console.log('✓ WASM module initialized synchronously');
     
-    console.log('✓ render function imported');
+    console.log('✓ render_template function imported');
     
     // Test template file path
     const templatePath = path.join(__dirname, '..', '..', 'examples', 'template.xlsx');
@@ -32,6 +32,15 @@ async function testDocumentProcessing() {
     // Load template
     const templateData = fs.readFileSync(templatePath);
     console.log('✓ Template file loaded, size:', templateData.length, 'bytes');
+    
+    let imageBase64 = '';
+    try {
+        const imgPath = path.join(__dirname, '..', '..', 'examples', 'image.png');
+        imageBase64 = fs.readFileSync(imgPath).toString('base64');
+        console.log('✓ Image file loaded, size:', imageBase64.length, 'bytes');
+    } catch (_imgErr) {
+        console.log('⚠️  Image file not found, proceeding without image');
+    }
     
     // Test data for rendering
     const testData = {
@@ -89,12 +98,15 @@ async function testDocumentProcessing() {
             report_date: new Date().toLocaleDateString("zh-CN"),
             quarter: "2024 Q1",
             version: "v1.0"
-        }
+        },
+        image: {
+            "base64": imageBase64, // 图片的 Base64 编码
+        },
     };
     
     // Render document using new functional API
     console.log('🔄 Rendering document with test data...');
-    const renderedData = render(new Uint8Array(templateData), JSON.stringify(testData));
+    const renderedData = render_template(new Uint8Array(templateData), JSON.stringify(testData));
     console.log('✓ Document rendered successfully, size:', renderedData.length, 'bytes');
     
     // Save output

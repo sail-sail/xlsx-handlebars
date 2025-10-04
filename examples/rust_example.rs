@@ -5,7 +5,7 @@ use base64::{engine::general_purpose, Engine};
  * 运行命令: cargo run --example rust_example
  */
 
-use xlsx_handlebars::template;
+use xlsx_handlebars::render_template;
 use serde_json::json;
 use std::fs;
 
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // 渲染模板
     println!("\n🎨 渲染模板...");
-    let result_bytes = template::render_handlebars(template_bytes, &data)?;
+    let result_bytes = render_template(template_bytes, &data)?;
     
     // 保存结果
     let output_path = "./examples/output_rust.xlsx";

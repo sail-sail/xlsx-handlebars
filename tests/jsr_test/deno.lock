@@ -1,16 +1,16 @@
 {
   "version": "5",
   "specifiers": {
-    "jsr:@sail/xlsx-handlebars@0.1.3": "0.1.3"
+    "jsr:@sail/xlsx-handlebars@0.2.0": "0.2.0"
   },
   "jsr": {
-    "@sail/xlsx-handlebars@0.1.3": {
-      "integrity": "7d3d83ae49a0409ce9fbca8b14b6b370f0f69a3ff6da62ccbfa80626aab4bbaa"
+    "@sail/xlsx-handlebars@0.2.0": {
+      "integrity": "0b0229c8e3c8039a1fb2543c9097499da038824f831bb2c100538b2f0d4b9b78"
     }
   },
   "workspace": {
     "dependencies": [
-      "jsr:@sail/xlsx-handlebars@0.1.3"
+      "jsr:@sail/xlsx-handlebars@0.2.0"
     ]
   }
 }
