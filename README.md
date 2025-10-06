@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/xlsx-handlebars/badge.svg)](https://docs.rs/xlsx-handlebars)
 [![License](https://img.shields.io/crates/l/xlsx-handlebars.svg)](https://github.com/sail-sail/xlsx-handlebars#license)
 
-English | [中文文档](README_CN.md)
+| English | [中文文档](README_CN.md) | [Demo](https://sail-sail.github.io/xlsx-handlebars-demo/) 
 
 A Rust library for processing XLSX files with Handlebars templates, supporting multiple platforms:
 - 🦀 Rust Native
@@ -795,4 +795,4 @@ This project is licensed under the MIT License - see the [LICENSE-MIT](LICENSE-M
 
 
 ## Support this project with a donation via Alipay:
-![Support this project with a donation](https://ejsexcel.com/alipay.jpg)
+![Support this project with a donation](https://www.ejsexcel.com/alipay.jpg)

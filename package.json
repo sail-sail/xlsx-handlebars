@@ -15,10 +15,7 @@
     "publish:rust": "cargo publish --allow-dirty",
     "publish:npm": "cd pkg-npm && npm publish",
     "publish:jsr": "cd pkg-jsr && deno publish --allow-slow-types --allow-dirty",
-    "test": "wasm-pack test --headless --firefox",
-    "test:node": "wasm-pack test --node",
-    "dev": "wasm-pack build --dev --target web --out-dir pkg-npm",
-    "clean": "rimraf pkg-npm pkg-jsr target",
+    "test": "cargo run examples/rust_example.rs && deno run --allow-read --allow-write examples/deno_example.ts && node examples/node_example.js",
     "version": "node tools/update_version.js"
   },
   "repository": {
@@ -40,9 +37,6 @@
     "url": "https://github.com/sail-sail/xlsx-handlebars/issues"
   },
   "homepage": "https://github.com/sail-sail/xlsx-handlebars#readme",
-  "devDependencies": {
-    "rimraf": "^5.0.0"
-  },
   "engines": {
     "node": ">=16.0.0"
   }

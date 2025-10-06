@@ -1571,7 +1571,7 @@ pub(crate) fn post_process_xml(
                     writer.write_event(event)?;
                 }
             }
-            Err(e) => return Err(format!("XML解析错误 at position {}: {:?}", reader.buffer_position(), e).into()),
+            Err(e) => return Err(format!("XML Error at position {}: {:?}", reader.buffer_position(), e).into()),
         }
         buf.clear();
     }

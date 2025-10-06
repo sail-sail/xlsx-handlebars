@@ -4,7 +4,7 @@
 [![Documentation](https://docs.rs/xlsx-handlebars/badge.svg)](https://docs.rs/xlsx-handlebars)
 [![License](https://img.shields.io/crates/l/xlsx-handlebars.svg)](https://github.com/sail-sail/xlsx-handlebars#license)
 
-中文文档 | [English](README.md)
+| 中文文档 | [English](README.md) | [Demo](https://sail-sail.github.io/xlsx-handlebars-demo/)  
 
 一个用于处理 XLSX 文件 Handlebars 模板的 Rust 库，支持多平台使用：
 - 🦀 Rust 原生
@@ -883,4 +883,4 @@ xlsx-handlebars 凭借 Rust 实现了**业界顶尖的性能表现**：
 
 
 ## 捐赠鼓励支持此项目,支付宝扫码:
-![捐赠鼓励支持此项目](https://ejsexcel.com/alipay.jpg)
+![捐赠鼓励支持此项目](https://www.ejsexcel.com/alipay.jpg)
